@@ -1,0 +1,981 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Correction loop — prototype</title>
+<style>
+:root {
+  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  --serif: "Iowan Old Style", Charter, "Bitstream Charter", Georgia, serif;
+
+  --bg: oklch(0.982 0.004 85);
+  --surface: oklch(1 0 0);
+  --sunken: oklch(0.955 0.005 85);
+  --text: oklch(0.24 0.012 260);
+  --text-2: oklch(0.47 0.012 260);
+  --text-3: oklch(0.6 0.01 260);
+  --border: oklch(0.2 0.02 260 / 0.1);
+  --border-strong: oklch(0.2 0.02 260 / 0.18);
+  --ok: oklch(0.56 0.12 155);
+  --warn: oklch(0.55 0.14 45);
+
+  --c-prep: oklch(0.56 0.15 245);
+  --c-accord: oklch(0.53 0.17 305);
+  --c-conj: oklch(0.62 0.14 70);
+  --c-ortho: oklch(0.56 0.17 20);
+
+  --shadow: 0 1px 1px oklch(0.2 0.02 260 / 0.04), 0 4px 10px oklch(0.2 0.02 260 / 0.05), 0 16px 32px oklch(0.2 0.02 260 / 0.05);
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: oklch(0.19 0.006 260);
+    --surface: oklch(0.235 0.008 260);
+    --sunken: oklch(0.21 0.007 260);
+    --text: oklch(0.93 0.005 260);
+    --text-2: oklch(0.74 0.008 260);
+    --text-3: oklch(0.6 0.008 260);
+    --border: oklch(0.32 0.01 260);
+    --border-strong: oklch(0.4 0.01 260);
+    --ok: oklch(0.72 0.12 155);
+    --warn: oklch(0.75 0.12 60);
+    --c-prep: oklch(0.72 0.11 245);
+    --c-accord: oklch(0.72 0.12 305);
+    --c-conj: oklch(0.78 0.11 75);
+    --c-ortho: oklch(0.72 0.13 20);
+    --shadow: 0 0 0 1px oklch(0.32 0.01 260);
+  }
+}
+
+[data-cat="prep"] { --cat: var(--c-prep); }
+[data-cat="accord"] { --cat: var(--c-accord); }
+[data-cat="conj"] { --cat: var(--c-conj); }
+[data-cat="ortho"] { --cat: var(--c-ortho); }
+
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 15px/1.5 var(--sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-synthesis: none;
+  padding-bottom: 96px;
+}
+button { font: inherit; color: inherit; touch-action: manipulation; }
+h1, h2, h3, p { margin: 0; }
+.num { font-variant-numeric: tabular-nums; }
+.muted { color: var(--text-2); }
+.eyebrow { font-size: 12px; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-3); font-weight: 500; }
+
+/* ---------- App bar ---------- */
+.bar {
+  position: sticky; top: 0; z-index: 10;
+  display: flex; align-items: center; gap: 16px;
+  min-height: 56px; padding: 8px 24px;
+  background: color-mix(in oklch, var(--bg) 88%, transparent);
+  -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--border);
+}
+.bar-title { display: flex; align-items: center; gap: 8px; min-width: 0; flex: 1; font-weight: 500; }
+.bar-title > span:last-child { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bar-crumb { color: var(--text-3); font-weight: 400; }
+.bar-sep { color: var(--text-3); }
+.bar-meta { display: flex; align-items: center; gap: 6px; color: var(--text-2); font-size: 13px; white-space: nowrap; }
+.chip { padding: 2px 8px; border-radius: 999px; background: var(--sunken); border: 1px solid var(--border); font-size: 12px; color: var(--text-2); }
+.bar-meta .sep { color: var(--text-3); }
+.bar-progress { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text-2); white-space: nowrap; }
+.pbar { width: 72px; height: 4px; border-radius: 2px; background: var(--sunken); overflow: hidden; box-shadow: inset 0 0 0 1px var(--border); }
+.pbar i { display: block; height: 100%; background: var(--ok); transform-origin: left; transition: transform 300ms var(--ease-out); }
+@media (max-width: 860px) { .bar-meta { display: none; } .bar { padding: 8px 16px; } }
+
+/* ---------- Essay text ---------- */
+.essay { font-family: var(--serif); font-size: 19px; line-height: 1.7; max-width: 62ch; }
+.essay p + p { margin-top: 1.7em; }
+@media (max-width: 600px) { .essay { font-size: 17px; } }
+
+.mk {
+  display: inline; margin: 0 -0.06em; padding: 0 0.12em;
+  border: 0; border-radius: 3px;
+  font: inherit; line-height: inherit; color: inherit;
+  background: color-mix(in oklch, var(--cat) 14%, transparent);
+  text-decoration: underline 2px var(--cat);
+  text-underline-offset: 0.24em;
+  text-decoration-skip-ink: none;
+  cursor: pointer;
+  transition: background-color 150ms ease-out;
+}
+@media (hover: hover) and (pointer: fine) { .mk:hover { background: color-mix(in oklch, var(--cat) 24%, transparent); } }
+.mk:focus-visible { outline: 2px solid var(--text-2); outline-offset: 2px; }
+.mk[data-state="skipped"] { background: transparent; text-decoration-style: dashed; text-decoration-thickness: 1.5px; }
+.mk sup { font: 600 11px/1 var(--sans); color: var(--cat); margin-right: 2px; vertical-align: 0.6em; }
+
+.mk-done { text-decoration: underline 1.5px color-mix(in oklch, var(--ok) 55%, transparent); text-underline-offset: 0.24em; border-radius: 3px; }
+.mk-done[data-state="revealed"] { text-decoration-color: var(--text-3); text-decoration-style: dotted; }
+.mk-done.just { animation: flash 900ms var(--ease-out); }
+@keyframes flash { from { background: color-mix(in oklch, var(--ok) 28%, transparent); } to { background: transparent; } }
+
+.fix { display: inline-block; position: relative; }
+.fix-input {
+  font: inherit; line-height: 1.35; color: var(--text);
+  background: color-mix(in oklch, var(--cat) 12%, var(--surface));
+  border: 0; border-bottom: 2px solid var(--cat);
+  border-radius: 4px 4px 0 0;
+  padding: 0 6px; margin: 0 1px;
+  min-width: 4ch;
+}
+.fix-input:focus { outline: 2px solid var(--text-2); outline-offset: 2px; }
+.fix.shake { animation: shake 280ms ease-out; }
+@keyframes shake { 0%,100% { transform: translateX(0); } 25% { transform: translateX(-3px); } 75% { transform: translateX(3px); } }
+
+/* ---------- Shared detail pieces ---------- */
+.cat-tag {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 12px; font-weight: 600; color: var(--cat);
+  white-space: nowrap;
+}
+.cat-tag::before, .dot { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--cat); flex: none; display: inline-block; }
+.p-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.p-rule { font-size: 17px; line-height: 1.3; font-weight: 600; text-wrap: balance; margin-top: 10px; }
+.p-explain { margin-top: 8px; color: var(--text-2); text-wrap: pretty; }
+.p-explain em, .d-rule em { font-family: var(--serif); font-style: italic; color: var(--text); }
+.p-seen { margin-top: 12px; font-size: 13px; color: var(--text-2); display: flex; gap: 6px; align-items: baseline; }
+.p-seen b { color: var(--text); font-weight: 600; }
+.p-kbd { margin-top: 12px; font-size: 12px; color: var(--text-3); }
+kbd { font: 500 11px/1 var(--sans); padding: 2px 5px; border-radius: 4px; border: 1px solid var(--border-strong); background: var(--sunken); }
+
+.fb { margin-top: 12px; font-size: 14px; padding: 8px 10px; border-radius: 8px; text-wrap: pretty; }
+.fb-warn { background: color-mix(in oklch, var(--warn) 10%, transparent); color: var(--text); box-shadow: inset 2px 0 0 var(--warn); }
+.fb-hint { background: var(--sunken); color: var(--text-2); }
+.fb-hint strong { color: var(--text); font-weight: 600; margin-right: 4px; }
+
+.actions { display: flex; align-items: center; gap: 8px; margin-top: 16px; flex-wrap: wrap; }
+.btn {
+  min-height: 40px; padding: 0 14px; border-radius: 8px;
+  border: 1px solid transparent; background: transparent;
+  font-weight: 500; cursor: pointer;
+  transition: background-color 150ms ease-out, border-color 150ms ease-out, transform 120ms ease-out;
+}
+.btn:active { transform: scale(0.96); }
+.btn:focus-visible { outline: 2px solid var(--text-2); outline-offset: 2px; }
+.btn-primary { background: var(--text); color: var(--bg); }
+.btn-ghost { border-color: var(--border-strong); }
+.btn-text { color: var(--text-2); padding: 0 10px; }
+.btn kbd { margin-left: 6px; background: transparent; border-color: color-mix(in oklch, currentColor 30%, transparent); color: inherit; }
+@media (hover: hover) and (pointer: fine) {
+  .btn-primary:hover { background: color-mix(in oklch, var(--text) 86%, var(--bg)); }
+  .btn-ghost:hover, .btn-text:hover { background: var(--sunken); }
+}
+
+.card { background: var(--surface); border-radius: 14px; box-shadow: var(--shadow); padding: 20px; }
+.enter { animation: enter 220ms var(--ease-out); }
+@keyframes enter { from { opacity: 0; transform: translateY(4px); } }
+
+.stats { display: flex; gap: 20px; margin-top: 14px; }
+.stats div { display: grid; }
+.stats b { font-size: 22px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.stats span { font-size: 12px; color: var(--text-2); }
+
+@media (prefers-reduced-motion: reduce) {
+  .enter, .fix.shake, .mk-done.just { animation: none; }
+  .pbar i, .sen { transition: none !important; }
+}
+
+/* ---------- 1 · Guided ---------- */
+.wrap { max-width: 1160px; margin: 0 auto; padding: 0 24px; }
+@media (max-width: 600px) { .wrap { padding: 0 16px; } }
+.g-steps { display: flex; align-items: center; gap: 4px; padding: 20px 0 8px; overflow-x: auto; }
+.g-step {
+  display: inline-flex; align-items: center; gap: 8px;
+  min-height: 40px; padding: 0 14px; border-radius: 999px;
+  border: 1px solid var(--border); background: var(--surface);
+  color: var(--text-2); white-space: nowrap; cursor: pointer;
+  transition: border-color 150ms ease-out, color 150ms ease-out;
+}
+.g-step:focus-visible { outline: 2px solid var(--text-2); outline-offset: 2px; }
+.g-step[aria-selected="true"] { color: var(--text); border-color: var(--cat); box-shadow: inset 0 0 0 1px var(--cat); }
+.g-step[data-done] .g-count { color: var(--ok); }
+.g-count { font-size: 12px; color: var(--text-3); }
+.g-arrow { color: var(--text-3); font-size: 12px; }
+.g-main { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 48px; padding-top: 24px; align-items: start; }
+.g-panel { position: sticky; top: 80px; }
+@media (max-width: 900px) {
+  .g-main { grid-template-columns: 1fr; gap: 24px; }
+  .g-panel { position: static; order: -1; }
+}
+
+/* ---------- 2 · Spotlight ---------- */
+.s-col { max-width: calc(62ch * 1.12); margin: 0 auto; padding: 0 24px; }
+@media (max-width: 600px) { .s-col { padding: 0 16px; } }
+.s-progress { display: flex; gap: 4px; padding: 24px 0 28px; }
+.s-tick { flex: 1; height: 24px; border: 0; background: transparent; padding: 0; cursor: pointer; position: relative; }
+.s-tick::after { content: ""; position: absolute; left: 0; right: 0; top: 9px; height: 6px; border-radius: 3px; background: color-mix(in oklch, var(--cat) 25%, transparent); transition: background-color 150ms ease-out; }
+.s-tick[data-state="fixed"]::after { background: var(--ok); }
+.s-tick[data-state="revealed"]::after { background: var(--text-3); }
+.s-tick[data-state="skipped"]::after { background: transparent; box-shadow: inset 0 0 0 1px var(--cat); }
+.s-tick[aria-current="true"]::after { background: var(--cat); top: 7px; height: 10px; }
+.s-tick:focus-visible { outline: 2px solid var(--text-2); outline-offset: 2px; border-radius: 4px; }
+.sen { transition: opacity 240ms var(--ease-out); }
+.sen.dim { opacity: 0.3; }
+.s-card { margin: 20px 0 8px; font-family: var(--sans); font-size: 15px; line-height: 1.5; border-left: 3px solid var(--cat); }
+.s-essay p + .s-card + p { margin-top: 1.4em; }
+.s-done { margin-bottom: 32px; }
+
+/* ---------- 3 · Margin ---------- */
+.mg-filters { display: flex; gap: 6px; padding: 20px 0 28px; flex-wrap: wrap; }
+.mg-chip {
+  display: inline-flex; align-items: center; gap: 8px;
+  min-height: 36px; padding: 0 12px; border-radius: 999px;
+  border: 1px solid var(--border); background: var(--surface); color: var(--text-2);
+  cursor: pointer; font-size: 13px;
+  transition: border-color 150ms ease-out, color 150ms ease-out;
+}
+.mg-chip[aria-pressed="true"] { color: var(--text); border-color: var(--border-strong); background: var(--sunken); }
+.mg-chip:focus-visible { outline: 2px solid var(--text-2); outline-offset: 2px; }
+.mg-chip .dot { width: 7px; height: 7px; }
+.mg-row { display: grid; grid-template-columns: minmax(0, 62ch) minmax(0, 300px); gap: 40px; align-items: start; }
+.mg-row + .mg-row { margin-top: 1.7em; }
+.mg-row > .essay { max-width: none; }
+.mg-notes { display: grid; gap: 6px; padding-top: 4px; }
+.note { border-radius: 10px; border: 1px solid var(--border); background: var(--surface); }
+.note.is-open { box-shadow: var(--shadow); border-color: transparent; }
+.note[data-state="fixed"], .note[data-state="revealed"] { background: transparent; }
+.note-head {
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  min-height: 40px; padding: 6px 12px; text-align: start;
+  border: 0; background: transparent; border-radius: 10px; cursor: pointer;
+}
+.note-head:focus-visible { outline: 2px solid var(--text-2); outline-offset: 2px; }
+.note-num { font-size: 12px; font-weight: 600; color: var(--cat); min-width: 1.2em; }
+.note-rule { flex: 1; font-size: 13px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.note[data-state="fixed"] .note-rule, .note[data-state="revealed"] .note-rule { color: var(--text-3); text-decoration: line-through; text-decoration-color: var(--border-strong); }
+.note-status { font-size: 12px; color: var(--text-3); white-space: nowrap; }
+.note[data-state="fixed"] .note-status { color: var(--ok); }
+.note-body { padding: 0 14px 14px; font-size: 14px; }
+.note-body .p-explain { margin-top: 2px; }
+@media (max-width: 1000px) {
+  .mg-row { grid-template-columns: 1fr; gap: 12px; }
+}
+
+/* ---------- 4 · Patterns ---------- */
+.pt-layout { display: grid; grid-template-columns: 260px minmax(0, 1fr); gap: 48px; padding-top: 28px; align-items: start; }
+.pt-rail { position: sticky; top: 80px; display: grid; gap: 6px; }
+.pt-rail .eyebrow { margin-bottom: 6px; }
+.pt-item {
+  display: grid; grid-template-columns: 1fr auto; grid-template-areas: "name bars" "meta bars";
+  gap: 2px 12px; align-items: center;
+  padding: 12px 14px; border-radius: 12px; text-align: start;
+  border: 1px solid transparent; background: transparent; cursor: pointer;
+  transition: background-color 150ms ease-out, border-color 150ms ease-out;
+}
+.pt-item[aria-current="true"] { background: var(--surface); border-color: var(--border); box-shadow: var(--shadow); }
+@media (hover: hover) and (pointer: fine) { .pt-item:not([aria-current="true"]):hover { background: var(--sunken); } }
+.pt-item:focus-visible { outline: 2px solid var(--text-2); outline-offset: 2px; }
+.pt-name { grid-area: name; display: flex; align-items: center; gap: 8px; font-weight: 600; }
+.pt-meta { grid-area: meta; font-size: 12px; color: var(--text-2); }
+.pt-bars { grid-area: bars; display: flex; align-items: flex-end; gap: 2px; height: 28px; }
+.pt-bars i { width: 5px; border-radius: 1.5px; background: color-mix(in oklch, var(--cat) 35%, transparent); }
+.pt-bars i[data-now] { background: var(--cat); }
+.pt-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; flex-wrap: wrap; }
+.pt-head h1 { font-size: 28px; line-height: 1.15; letter-spacing: -0.01em; font-weight: 650; margin-top: 4px; }
+.pt-head p.muted { margin-top: 4px; }
+.seg { display: inline-flex; padding: 3px; border-radius: 10px; background: var(--sunken); border: 1px solid var(--border); }
+.seg button { min-height: 34px; padding: 0 14px; border: 0; border-radius: 7px; background: transparent; color: var(--text-2); cursor: pointer; font-size: 13px; font-weight: 500; }
+.seg button[aria-selected="true"] { background: var(--surface); color: var(--text); box-shadow: 0 1px 2px oklch(0.2 0.02 260 / 0.08), 0 0 0 1px var(--border); }
+.seg button:focus-visible { outline: 2px solid var(--text-2); outline-offset: 2px; }
+.pt-subs { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 18px; }
+.pt-subs span { font-size: 13px; padding: 4px 10px; border-radius: 999px; background: var(--surface); border: 1px solid var(--border); color: var(--text-2); }
+.pt-subs span b { color: var(--text); font-weight: 600; }
+.pt-sub { font-size: 13px; font-weight: 600; color: var(--text-2); margin: 32px 0 10px; }
+.d-list { display: grid; gap: 10px; }
+.d-card { padding: 18px 20px; }
+.d-card[data-state="fixed"], .d-card[data-state="revealed"] { box-shadow: none; background: transparent; border: 1px solid var(--border); }
+.d-top { display: flex; justify-content: space-between; gap: 12px; font-size: 12px; color: var(--text-3); }
+.d-seen { color: var(--text-2); }
+.d-sent { font-family: var(--serif); font-size: 19px; line-height: 1.6; margin-top: 8px; }
+.d-rule { margin-top: 8px; font-size: 14px; color: var(--text-2); max-width: 70ch; text-wrap: pretty; }
+.d-rule strong { color: var(--text); font-weight: 600; }
+.d-status { margin-top: 10px; font-size: 13px; color: var(--ok); }
+.d-card[data-state="revealed"] .d-status { color: var(--text-3); }
+.pt-essay { margin-top: 28px; }
+@media (max-width: 900px) {
+  .pt-layout { grid-template-columns: 1fr; gap: 20px; }
+  .pt-rail { position: static; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .pt-rail .eyebrow { grid-column: 1 / -1; }
+}
+
+/* ---------- Picker (verbatim spec) ---------- */
+.proto-picker {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 2147483647;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+  border-radius: 999px;
+  background: rgba(10, 10, 10, 0.82);
+  -webkit-backdrop-filter: blur(12px) saturate(1.4);
+  backdrop-filter: blur(12px) saturate(1.4);
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.08) inset,
+    0 8px 24px rgba(0, 0, 0, 0.24),
+    0 2px 6px rgba(0, 0, 0, 0.12);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 13px;
+  line-height: 1;
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.proto-picker-highlight {
+  position: absolute;
+  top: 4px;
+  left: 0;
+  height: 28px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+  will-change: transform;
+}
+.proto-picker[data-ready] .proto-picker-highlight {
+  transition:
+    transform 250ms cubic-bezier(0.23, 1, 0.32, 1),
+    width 250ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+@media (prefers-reduced-motion: reduce) {
+  .proto-picker[data-ready] .proto-picker-highlight { transition: none; }
+}
+.proto-picker-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  height: 28px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.55);
+  font: inherit;
+  cursor: pointer;
+  transition: color 150ms ease-out;
+}
+.proto-picker-item:hover { color: rgba(255, 255, 255, 0.85); }
+.proto-picker-item:active { transform: scale(0.97); }
+.proto-picker-item:focus-visible { outline: 2px solid rgba(255, 255, 255, 0.4); outline-offset: 2px; }
+.proto-picker-item[data-active] { color: #fff; }
+.proto-picker-divider { width: 1px; height: 16px; margin: 0 4px; background: rgba(255, 255, 255, 0.12); }
+.proto-picker-replay { padding: 0 10px; font-size: 14px; }
+.proto-picker[data-position="top"] { bottom: auto; top: 24px; }
+</style>
+</head>
+<body>
+<div id="stage"></div>
+
+<nav class="proto-picker" aria-label="Prototype variants">
+  <span class="proto-picker-highlight" aria-hidden="true"></span>
+  <button class="proto-picker-item" data-active aria-current="true">Guided</button>
+  <button class="proto-picker-item">Spotlight</button>
+  <button class="proto-picker-item">Margin</button>
+  <button class="proto-picker-item">Patterns</button>
+  <span class="proto-picker-divider" aria-hidden="true"></span>
+  <button class="proto-picker-item proto-picker-replay" aria-label="Replay animation (R)">↻</button>
+</nav>
+
+<script>
+/* ================= Data ================= */
+const CATS = {
+  prep: { label: 'Prepositions' },
+  accord: { label: 'Agreement' },
+  conj: { label: 'Conjugation' },
+  ortho: { label: 'Spelling' },
+};
+const ORDER = ['prep', 'accord', 'conj', 'ortho'];
+
+// One mock-run essay (TEF Section B) with the mistakes a real learner makes.
+const M = [
+  { id: 'm1', cat: 'prep', wrong: 'de la maison', fix: 'à la maison', accept: ['à la maison', 'de chez soi', 'chez soi'], seen: 3,
+    rule: 'A place you are in takes à, not de',
+    explain: '<em>De la maison</em> means “from the house”, a starting point. To say where you work, French uses <em>à la maison</em> or <em>de chez soi</em>.',
+    hint: 'Which preposition marks a location, as in <em>je suis ___ Montréal</em>?' },
+  { id: 'm2', cat: 'prep', wrong: 'dépend sur le', fix: 'dépend du', accept: ['dépend du'], seen: 4,
+    rule: 'Dépendre always takes de',
+    explain: '<em>Sur</em> is the English “depend on” leaking through. The verb is <em>dépendre de</em>, and <em>de + le</em> contracts.',
+    hint: '<em>de + le</em> becomes one word.' },
+  { id: 'm3', cat: 'accord', wrong: 'seuls', fix: 'seules', accept: ['seules'], seen: 2,
+    rule: 'Personne is always feminine',
+    explain: 'The adjective describes <em>personnes</em>, which is feminine plural even when the people are men.',
+    hint: 'Feminine plural ending.' },
+  { id: 'm4', cat: 'accord', wrong: 'efficace', fix: 'efficaces', accept: ['efficaces'], seen: 0,
+    rule: 'The adjective agrees with réunions',
+    explain: '<em>Efficace</em> describes <em>les réunions en ligne</em>, a plural noun, so it needs a plural ending.',
+    hint: 'One letter is missing at the end.' },
+  { id: 'm5', cat: 'conj', wrong: 'peuvent', fix: 'puissent', accept: ['puissent'], seen: 1,
+    rule: 'Il faut que + subjunctive',
+    explain: '<em>Il faut que</em> always triggers the subjunctive. <em>Pouvoir</em> has an irregular stem in the subjunctive.',
+    hint: '<em>que je puisse, que tu puisses, qu’ils ___</em>' },
+  { id: 'm6', cat: 'ortho', wrong: 'professionelle', fix: 'professionnelle', accept: ['professionnelle'], seen: 2,
+    rule: 'Professionnel doubles the n',
+    explain: 'Unlike English “professional”, the French word has two n’s, and so does the feminine form.',
+    hint: 'Count the n’s.' },
+  { id: 'm7', cat: 'accord', wrong: 'importante', fix: 'important', accept: ['important'], seen: 0,
+    rule: 'After c’est, the adjective stays masculine',
+    explain: 'In <em>c’est … de + infinitive</em>, the adjective refers to an idea, not a noun, so it stays masculine singular.',
+    hint: 'Drop the feminine ending.' },
+  { id: 'm8', cat: 'ortho', wrong: 'environement', fix: 'environnement', accept: ['environnement'], seen: 1,
+    rule: 'Environnement has a double n',
+    explain: 'English “environment” has one n; French <em>environnement</em> has two.',
+    hint: 'Look at the middle of the word.' },
+  { id: 'm9', cat: 'prep', wrong: 'pour deux ou trois jours', fix: 'deux ou trois jours', accept: ['deux ou trois jours'], seen: 0,
+    rule: 'No pour in front of a frequency',
+    explain: '<em>Pour</em> + time is a planned stretch (<em>pour deux semaines</em>). For how often something happens, give the time on its own: <em>… jours par semaine</em>.',
+    hint: 'Remove one word.' },
+  { id: 'm10', cat: 'accord', wrong: 'chaque jours', fix: 'chaque jour', accept: ['chaque jour', 'tous les jours'], seen: 1,
+    rule: 'Chaque is always followed by a singular',
+    explain: '<em>Chaque</em> means each one on its own, so the noun stays singular. If you want a plural, use <em>tous les jours</em>.',
+    hint: 'Singular noun after <em>chaque</em>.' },
+  { id: 'm11', cat: 'prep', wrong: 'intéressés à', fix: 'intéressés par', accept: ['intéressés par'], seen: 2,
+    rule: 'Intéressé par, but s’intéresser à',
+    explain: 'The verb <em>s’intéresser</em> takes <em>à</em>, but the adjective <em>intéressé</em> takes <em>par</em>.',
+    hint: 'Same preposition as in <em>passionné ___</em>.' },
+  { id: 'm12', cat: 'conj', wrong: 'offriraient', fix: 'offraient', accept: ['offraient'], seen: 5,
+    rule: 'Si + imparfait, never the conditional',
+    explain: 'In a <em>si</em> clause the verb goes in the imparfait. The conditional belongs in the result clause, which you got right: <em>elles attireraient</em>.',
+    hint: 'Imparfait of <em>offrir</em>, 3rd person plural.' },
+  { id: 'm13', cat: 'conj', wrong: 'devrait', fix: 'devraient', accept: ['devraient'], seen: 0,
+    rule: 'The verb agrees with les entreprises',
+    explain: 'The subject is plural, so the verb takes the plural conditional ending.',
+    hint: '<em>elles ___</em>' },
+];
+
+// Mistakes from earlier essays, used by the Patterns drill.
+const PAST = [
+  { id: 'p1', cat: 'prep', from: 'Essay 4 · Oct 3', before: 'Pour le pique-nique, ça ', wrong: 'dépend sur', after: ' la météo.', fix: 'dépend de', accept: ['dépend de'],
+    rule: 'Dépendre always takes de', explain: 'Same rule as above, from an earlier essay.', hint: '<em>dépendre ___</em>' },
+  { id: 'p2', cat: 'prep', from: 'Essay 2 · Sep 12', before: 'Je suis très ', wrong: 'intéressé à', after: ' la politique locale.', fix: 'intéressé par', accept: ['intéressé par'],
+    rule: 'Intéressé par, but s’intéresser à', explain: 'The adjective takes <em>par</em>.', hint: '<em>intéressé ___</em>' },
+  { id: 'p3', cat: 'accord', from: 'Essay 5 · Oct 10', before: 'Les gens de mon quartier sont très ', wrong: 'gentil', after: '.', fix: 'gentils', accept: ['gentils'],
+    rule: 'The adjective agrees with gens', explain: '<em>Les gens</em> is plural.', hint: 'Plural ending.' },
+  { id: 'p4', cat: 'conj', from: 'Essay 3 · Sep 21', before: 'Si j’', wrong: 'aurais', after: ' plus de temps, je voyagerais davantage.', fix: 'avais', accept: ['avais'],
+    rule: 'Si + imparfait, never the conditional', explain: 'Imparfait after <em>si</em>.', hint: 'Imparfait of <em>avoir</em>.' },
+  { id: 'p5', cat: 'ortho', from: 'Essay 6 · Oct 17', before: 'Le ', wrong: 'gouvernment', after: ' doit agir rapidement.', fix: 'gouvernement', accept: ['gouvernement'],
+    rule: 'Gouvernement keeps the e', explain: 'French keeps the <em>e</em> before <em>-ment</em>.', hint: 'One letter is missing.' },
+];
+
+// Mistakes per category over the last six essays (the last one is this essay).
+const HIST = { prep: [6, 5, 7, 4, 5, 4], accord: [5, 4, 3, 5, 3, 4], conj: [3, 4, 2, 3, 2, 3], ortho: [2, 1, 2, 1, 1, 2] };
+
+const ESSAY_RAW = [
+  ['Selon certains, le télétravail devrait devenir la norme pour tous les employés.',
+   'Je ne suis pas complètement d’accord.',
+   'Bien sûr, travailler [[m1]] a des avantages, mais tout [[m2]] type de travail.'],
+  ['Premièrement, beaucoup de personnes se sentent [[m3]] quand elles travaillent à distance.',
+   'Mon collègue Karim, qui travaille dans une banque depuis trois ans, m’a dit que les réunions en ligne sont souvent moins [[m4]] que les vraies réunions.',
+   'Les gens ne se parlent plus et l’esprit d’équipe disparaît.',
+   'Il faut que les employés [[m5]] voir leurs collègues en personne pour construire la confiance.'],
+  ['Deuxièmement, il est difficile de séparer la vie [[m6]] et la vie personnelle.',
+   'Quand on travaille chez soi, on répond aux courriels à dix heures du soir et on oublie de faire des pauses.',
+   'Je pense que c’est [[m7]] de protéger cet équilibre, surtout pour les familles avec de jeunes enfants, car l’[[m8]] à la maison est rarement calme.'],
+  ['Par contre, le télétravail peut être utile [[m9]] par semaine.',
+   'Les employés économisent du temps et de l’argent parce qu’ils ne prennent pas le métro [[m10]].',
+   'Beaucoup de jeunes sont [[m11]] cette option, et si les entreprises [[m12]] plus de flexibilité, elles attireraient de meilleurs candidats.'],
+  ['En conclusion, le télétravail est une bonne option, mais il ne doit pas remplacer complètement le travail au bureau.',
+   'Les entreprises [[m13]] trouver un équilibre qui respecte les besoins des employés et de l’organisation.'],
+];
+
+const ITEMS = Object.fromEntries([...M, ...PAST].map(x => [x.id, x]));
+const ESSAY = ESSAY_RAW.map(p => p.map(sen => sen.split(/\[\[(m\d+)\]\]/).map((t, i) => i % 2 ? { m: t } : t).filter(x => x !== '')));
+const WHERE = {}, APPEAR = [];
+ESSAY.forEach((p, pi) => p.forEach((sen, si) => sen.forEach(x => { if (x.m) { WHERE[x.m] = { pi, si }; APPEAR.push(x.m); } })));
+const NUM = Object.fromEntries(APPEAR.map((id, i) => [id, i + 1]));
+const BYCAT = ORDER.flatMap(c => APPEAR.filter(id => ITEMS[id].cat === c));
+const WORDS = ESSAY.flat(2).map(x => x.m ? ITEMS[x.m].wrong : x).join(' ').split(/\s+/).filter(w => /\p{L}/u.test(w)).length;
+
+/* ================= Engine ================= */
+const esc = t => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+const norm = t => t.normalize('NFC').replace(/[’‘]/g, "'").replace(/\s+/g, ' ').trim().toLowerCase();
+const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+const isOpen = (s, id) => s.st[id].status === 'open';
+
+function session() {
+  const st = {};
+  for (const id in ITEMS) st[id] = { status: 'open', attempts: 0, value: ITEMS[id].wrong, final: null, fb: null, hint: false };
+  return { st, just: null };
+}
+function attempt(s, id, val) {
+  const it = ITEMS[id], st = s.st[id];
+  st.value = val;
+  if (it.accept.some(a => norm(a) === norm(val))) { st.status = 'fixed'; st.final = val.trim(); st.fb = null; s.just = id; return 'fixed'; }
+  st.attempts++;
+  st.fb = norm(val) === norm(it.wrong) ? 'unchanged' : 'wrong';
+  return st.fb;
+}
+function reveal(s, id) { const st = s.st[id]; st.status = 'revealed'; st.final = ITEMS[id].fix; st.fb = null; s.just = id; }
+function skip(s, id) { s.st[id].status = 'skipped'; s.st[id].fb = null; }
+function reopen(s, id) { if (s.st[id].status === 'skipped') s.st[id].status = 'open'; }
+function tally(s, ids) {
+  const t = { fixed: 0, revealed: 0, skipped: 0, open: 0 };
+  ids.forEach(id => t[s.st[id].status]++);
+  return t;
+}
+function nextOpen(s, list, from) {
+  const i = list.indexOf(from);
+  const rot = i < 0 ? list : [...list.slice(i + 1), ...list.slice(0, i + 1)];
+  return rot.find(id => isOpen(s, id)) || null;
+}
+
+const measure = document.createElement('canvas').getContext('2d');
+function size(inp) {
+  const cs = getComputedStyle(inp);
+  measure.font = `${cs.fontStyle} ${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
+  inp.style.width = Math.ceil(Math.max(measure.measureText(inp.value || '____').width, 40) + 16) + 'px';
+}
+function post(root, s, o = {}) {
+  root.querySelectorAll('.fix-input').forEach(size);
+  if (o.shake) root.querySelector(`.fix-input[data-id="${o.shake}"]`)?.parentElement.classList.add('shake');
+  if (o.focus) {
+    const inp = root.querySelector(`.fix-input[data-id="${o.focus}"]`);
+    if (inp) { inp.focus({ preventScroll: true }); const n = inp.value.length; inp.setSelectionRange(n, n); }
+  }
+  if (o.scrollTo) {
+    const t = root.querySelector(o.scrollTo);
+    if (t) {
+      const r = t.getBoundingClientRect();
+      if (r.top < 90 || r.bottom > innerHeight - 110) t.scrollIntoView({ block: 'center', behavior: reduced() ? 'auto' : 'smooth' });
+    }
+  }
+  s.just = null;
+}
+
+// Shared check / hint / reveal / skip wiring. `api` supplies render, advance and other.
+function wire(root, s, api) {
+  const doCheck = (id, val) => {
+    const r = attempt(s, id, val);
+    if (r === 'fixed') api.advance(id);
+    else api.render({ focus: id, shake: id });
+  };
+  root.addEventListener('click', e => {
+    const t = e.target.closest('[data-act]');
+    if (!t || !root.contains(t)) return;
+    const { act, id } = t.dataset;
+    if (act === 'check') { const inp = root.querySelector(`.fix-input[data-id="${id}"]`); doCheck(id, inp ? inp.value : s.st[id].value); }
+    else if (act === 'hint') { s.st[id].hint = true; api.render({ focus: id }); }
+    else if (act === 'reveal') { reveal(s, id); api.advance(id); }
+    else if (act === 'skip') { skip(s, id); api.advance(id); }
+    else api.other(t, act);
+  });
+  root.addEventListener('keydown', e => {
+    const inp = e.target.closest?.('.fix-input');
+    if (!inp) return;
+    if (e.key === 'Enter') { e.preventDefault(); doCheck(inp.dataset.id, inp.value); }
+    else if (e.key === 'Escape') inp.blur();
+  });
+  root.addEventListener('input', e => {
+    const inp = e.target.closest?.('.fix-input');
+    if (!inp) return;
+    s.st[inp.dataset.id].value = inp.value;
+    size(inp);
+  });
+}
+
+/* ================= Shared render pieces ================= */
+function appBar(s) {
+  const done = APPEAR.filter(id => !isOpen(s, id) && s.st[id].status !== 'skipped').length;
+  return `<header class="bar">
+    <div class="bar-title"><span class="bar-crumb">Essays</span><span class="bar-sep">/</span><span>Le télétravail devrait-il devenir la norme ?</span></div>
+    <div class="bar-meta"><span class="chip">Section B</span><span class="chip">Mock run</span><span class="num">${WORDS} words</span><span class="sep">·</span><span class="num">34:12 of 35:00</span><span class="sep">·</span><span>Est. CLB 6</span></div>
+    <div class="bar-progress"><span class="num">${done} of ${APPEAR.length}</span> resolved <span class="pbar"><i style="transform:scaleX(${done / APPEAR.length})"></i></span></div>
+  </header>`;
+}
+
+function seg(s, m, o) {
+  const st = s.st[m.id];
+  if (o.active === m.id && (st.status === 'open' || o.forceInput)) {
+    return `<span class="fix" data-cat="${m.cat}"><input class="fix-input" data-id="${m.id}" value="${esc(st.value)}" aria-label="Rewrite “${esc(m.wrong)}”" spellcheck="false" autocomplete="off" autocapitalize="off" autocorrect="off" enterkeyhint="done"></span>`;
+  }
+  if (st.status === 'fixed' || st.status === 'revealed') {
+    const title = st.status === 'fixed' ? `You fixed “${m.wrong}”` : `Answer shown. You wrote “${m.wrong}”`;
+    return `<span class="mk-done${s.just === m.id ? ' just' : ''}" data-state="${st.status}" title="${esc(title)}">${esc(st.final)}</span>`;
+  }
+  if (!o.visible || !o.visible(m)) return esc(m.wrong);
+  const sup = o.num ? `<sup>${NUM[m.id]}</sup>` : '';
+  return `<button class="mk" data-act="select" data-id="${m.id}" data-cat="${m.cat}" data-state="${st.status}" aria-label="${CATS[m.cat].label} mistake: ${esc(m.wrong)}${st.status === 'skipped' ? ' (skipped)' : ''}">${sup}${esc(m.wrong)}</button>`;
+}
+const renderSentence = (s, sen, o) => sen.map(x => typeof x === 'string' ? esc(x) : seg(s, ITEMS[x.m], o)).join('');
+const renderParagraph = (s, pi, o) => ESSAY[pi].map((sen, si) => `<span class="sen${o.sen ? ' ' + o.sen(pi, si) : ''}">${renderSentence(s, sen, o)}</span>`).join(' ');
+const renderEssay = (s, o) => ESSAY.map((p, pi) => `<p>${renderParagraph(s, pi, o)}</p>${o.after ? o.after(pi) : ''}`).join('');
+
+function seenLine(it) {
+  return it.seen ? `<p class="p-seen"><span aria-hidden="true">↻</span><span>You’ve made this mistake <b>${it.seen} times</b> in earlier essays.</span></p>` : '';
+}
+function fbHTML(s, id) {
+  const st = s.st[id], it = ITEMS[id];
+  let h = '';
+  if (st.fb === 'unchanged') h += `<p class="fb fb-warn">That’s still your original text. Change it in place, then check again.</p>`;
+  else if (st.fb === 'wrong') h += `<p class="fb fb-warn">Not yet. “${esc(st.value.trim())}” still isn’t right.</p>`;
+  if (st.hint || st.attempts >= 1) h += `<p class="fb fb-hint"><strong>Hint</strong>${it.hint}</p>`;
+  return h;
+}
+function actionsHTML(s, id) {
+  const st = s.st[id];
+  const second = st.attempts >= 2
+    ? `<button class="btn btn-ghost" data-act="reveal" data-id="${id}">Show answer</button>`
+    : (st.hint || st.attempts >= 1 ? '' : `<button class="btn btn-ghost" data-act="hint" data-id="${id}">Hint</button>`);
+  return `<div class="actions"><button class="btn btn-primary" data-act="check" data-id="${id}">Check <kbd>↵</kbd></button>${second}<button class="btn btn-text" data-act="skip" data-id="${id}">Skip</button></div>`;
+}
+function statsHTML(t) {
+  return `<div class="stats"><div><b>${t.fixed}</b><span>fixed by you</span></div><div><b>${t.revealed}</b><span>answer shown</span></div><div><b>${t.skipped}</b><span>skipped</span></div></div>`;
+}
+function mountRoot(stage, cls) {
+  const root = document.createElement('div');
+  root.className = cls;
+  stage.append(root);
+  return root;
+}
+
+/* ================= 1 · Guided — category by category, explanation panel on the right ================= */
+function mountGuided(stage) {
+  const s = session();
+  const root = mountRoot(stage, 'v-guided');
+  const ids = c => BYCAT.filter(id => ITEMS[id].cat === c);
+  let cat = 'prep';
+  let active = ids(cat).find(id => isOpen(s, id));
+
+  function panel() {
+    if (active) {
+      const it = ITEMS[active], list = ids(cat);
+      return `<div class="card enter" data-cat="${it.cat}">
+        <div class="p-head"><span class="cat-tag">${CATS[it.cat].label}</span><span class="num muted">${list.indexOf(active) + 1} of ${list.length}</span></div>
+        <h2 class="p-rule">${esc(it.rule)}</h2>
+        <p class="p-explain">${it.explain}</p>
+        ${seenLine(it)}
+        ${fbHTML(s, active)}
+        ${actionsHTML(s, active)}
+        <p class="p-kbd">Rewrite the highlighted words in your text, then press <kbd>Enter</kbd>.</p>
+      </div>`;
+    }
+    const all = tally(s, APPEAR);
+    if (all.open === 0 && all.skipped === 0) {
+      return `<div class="card enter"><h2 class="p-rule" style="margin-top:0">All ${APPEAR.length} mistakes resolved</h2><p class="p-explain">Prepositions are still your biggest pattern. The next mock run will start with a preposition warm-up.</p>${statsHTML(all)}</div>`;
+    }
+    const t = tally(s, ids(cat));
+    const next = ORDER.find(c => c !== cat && ids(c).some(id => isOpen(s, id)));
+    return `<div class="card enter" data-cat="${cat}">
+      <div class="p-head"><span class="cat-tag">${CATS[cat].label}</span><span class="muted">Done</span></div>
+      <h2 class="p-rule">${CATS[cat].label} cleared</h2>
+      ${statsHTML(t)}
+      ${t.skipped ? `<p class="p-explain">Skipped ones stay underlined in your text. Click one to go back to it.</p>` : ''}
+      ${next ? `<div class="actions"><button class="btn btn-primary" data-act="nextcat" data-cat="${next}">Next: ${CATS[next].label}</button></div>` : ''}
+    </div>`;
+  }
+
+  const api = {
+    render(o = {}) {
+      root.innerHTML = `${appBar(s)}
+      <div class="wrap">
+        <div class="g-steps" role="tablist" aria-label="Mistake categories">
+          ${ORDER.map(c => {
+            const t = tally(s, ids(c)), n = ids(c).length, res = n - t.open - t.skipped;
+            return `<button class="g-step" role="tab" aria-selected="${c === cat}" data-act="cat" data-cat="${c}"${res === n ? ' data-done' : ''}><span class="dot"></span><span>${CATS[c].label}</span><span class="g-count num">${res}/${n}</span></button>`;
+          }).join('<span class="g-arrow" aria-hidden="true">→</span>')}
+        </div>
+        <div class="g-main">
+          <article class="essay" aria-label="Your essay">${renderEssay(s, { active, visible: m => m.cat === cat })}</article>
+          <aside class="g-panel" aria-live="polite">${panel()}</aside>
+        </div>
+      </div>`;
+      post(root, s, o);
+    },
+    advance(id) {
+      active = nextOpen(s, ids(cat), id);
+      api.render({ focus: active, scrollTo: '.fix' });
+    },
+    other(t, act) {
+      if (act === 'cat' || act === 'nextcat') {
+        cat = t.dataset.cat;
+        active = ids(cat).find(id => isOpen(s, id)) || null;
+        api.render({ scrollTo: '.fix' });
+      } else if (act === 'select') {
+        const id = t.dataset.id;
+        reopen(s, id);
+        cat = ITEMS[id].cat; active = id;
+        api.render({ focus: id });
+      }
+    },
+  };
+  wire(root, s, api);
+  api.render();
+}
+
+/* ================= 2 · Spotlight — one mistake at a time, explanation inline under the paragraph ================= */
+function mountSpotlight(stage) {
+  const s = session();
+  const root = mountRoot(stage, 'v-spotlight');
+  let active = BYCAT[0];
+
+  function card() {
+    const it = ITEMS[active];
+    return `<div class="card s-card enter" data-cat="${it.cat}" aria-live="polite">
+      <div class="p-head"><span class="cat-tag">${CATS[it.cat].label}</span><span class="num muted">${BYCAT.indexOf(active) + 1} of ${BYCAT.length}</span></div>
+      <h2 class="p-rule">${esc(it.rule)}</h2>
+      <p class="p-explain">${it.explain}</p>
+      ${seenLine(it)}
+      ${fbHTML(s, active)}
+      ${actionsHTML(s, active)}
+    </div>`;
+  }
+  function done() {
+    const t = tally(s, APPEAR);
+    return `<div class="card s-done enter">
+      <h2 class="p-rule" style="margin-top:0">${t.skipped ? `${APPEAR.length - t.skipped} of ${APPEAR.length} resolved` : `All ${APPEAR.length} mistakes resolved`}</h2>
+      <p class="p-explain">${t.skipped ? 'Tap a hollow mark in the bar above to go back to a skipped one.' : 'Your corrected essay is below.'}</p>
+      ${statsHTML(t)}
+    </div>`;
+  }
+
+  const api = {
+    render(o = {}) {
+      const where = active && WHERE[active];
+      root.innerHTML = `${appBar(s)}
+      <div class="s-col">
+        <div class="s-progress" aria-label="Mistakes">
+          ${BYCAT.map((id, i) => `<button class="s-tick" data-act="select" data-id="${id}" data-cat="${ITEMS[id].cat}" data-state="${s.st[id].status}" aria-current="${id === active}" aria-label="Mistake ${i + 1}, ${CATS[ITEMS[id].cat].label}, ${s.st[id].status}"></button>`).join('')}
+        </div>
+        ${active ? '' : done()}
+        <article class="essay s-essay" aria-label="Your essay">${renderEssay(s, {
+          active,
+          sen: (pi, si) => !where ? '' : (where.pi === pi && where.si === si ? 'lit' : 'dim'),
+          after: pi => where && where.pi === pi ? card() : '',
+        })}</article>
+      </div>`;
+      post(root, s, o);
+    },
+    advance(id) {
+      active = nextOpen(s, BYCAT, id);
+      api.render({ focus: active, scrollTo: active ? '.fix' : '.s-progress' });
+    },
+    other(t, act) {
+      if (act === 'select') {
+        const id = t.dataset.id;
+        if (s.st[id].status === 'fixed' || s.st[id].status === 'revealed') return;
+        reopen(s, id); active = id;
+        api.render({ focus: id, scrollTo: '.fix' });
+      }
+    },
+  };
+  wire(root, s, api);
+  api.render();
+}
+
+/* ================= 3 · Margin — everything at once, teacher-style notes in the margin ================= */
+function mountMargin(stage) {
+  const s = session();
+  const root = mountRoot(stage, 'v-margin');
+  let filter = 'all';
+  let active = null;
+  const shown = m => filter === 'all' || m.cat === filter;
+
+  function note(id) {
+    const it = ITEMS[id], st = s.st[id], open = id === active && st.status === 'open';
+    const status = { fixed: '✓ Fixed', revealed: 'Answer shown', skipped: 'Skipped', open: '' }[st.status];
+    return `<div class="note${open ? ' is-open' : ''}" data-cat="${it.cat}" data-state="${st.status}">
+      <button class="note-head" data-act="select" data-id="${id}" aria-expanded="${open}">
+        <span class="note-num num">${NUM[id]}</span><span class="note-rule">${esc(it.rule)}</span>${status ? `<span class="note-status">${status}</span>` : ''}
+      </button>
+      ${open ? `<div class="note-body enter"><span class="cat-tag">${CATS[it.cat].label}</span><p class="p-explain">${it.explain}</p>${seenLine(it)}${fbHTML(s, id)}${actionsHTML(s, id)}</div>` : ''}
+    </div>`;
+  }
+
+  const api = {
+    render(o = {}) {
+      const all = tally(s, APPEAR);
+      root.innerHTML = `${appBar(s)}
+      <div class="wrap">
+        <div class="mg-filters" role="toolbar" aria-label="Show mistakes">
+          <button class="mg-chip" data-act="filter" data-f="all" aria-pressed="${filter === 'all'}">All <span class="num">${all.open + all.skipped}</span></button>
+          ${ORDER.map(c => { const t = tally(s, BYCAT.filter(id => ITEMS[id].cat === c)); return `<button class="mg-chip" data-cat="${c}" data-act="filter" data-f="${c}" aria-pressed="${filter === c}"><span class="dot"></span>${CATS[c].label} <span class="num">${t.open + t.skipped}</span></button>`; }).join('')}
+        </div>
+        ${ESSAY.map((p, pi) => {
+          const here = APPEAR.filter(id => WHERE[id].pi === pi && shown(ITEMS[id]));
+          return `<div class="mg-row"><p class="essay">${renderParagraph(s, pi, { active, visible: shown, num: true })}</p><div class="mg-notes">${here.map(note).join('')}</div></div>`;
+        }).join('')}
+      </div>`;
+      post(root, s, o);
+    },
+    advance(id) {
+      active = nextOpen(s, APPEAR.filter(x => shown(ITEMS[x])), id);
+      api.render({ focus: active, scrollTo: '.fix' });
+    },
+    other(t, act) {
+      if (act === 'filter') {
+        filter = t.dataset.f;
+        if (active && !shown(ITEMS[active])) active = null;
+        api.render();
+      } else if (act === 'select') {
+        const id = t.dataset.id;
+        if (s.st[id].status === 'fixed' || s.st[id].status === 'revealed') return;
+        if (active === id && t.classList.contains('note-head')) { active = null; api.render(); return; }
+        reopen(s, id); active = id;
+        api.render({ focus: id });
+      }
+    },
+  };
+  wire(root, s, api);
+  api.render();
+}
+
+/* ================= 4 · Patterns — start from what you keep getting wrong, drill across essays ================= */
+function mountPatterns(stage) {
+  const s = session();
+  const root = mountRoot(stage, 'v-patterns');
+  const sum = c => HIST[c].reduce((a, b) => a + b, 0);
+  const ranked = [...ORDER].sort((a, b) => sum(b) - sum(a));
+  let sel = ranked[0];
+  let view = 'drill';
+  const essayIds = c => BYCAT.filter(id => ITEMS[id].cat === c);
+  const pastIds = c => PAST.filter(p => p.cat === c).map(p => p.id);
+  const drillIds = c => [...essayIds(c), ...pastIds(c)];
+
+  function sentence(id) {
+    const it = ITEMS[id], st = s.st[id];
+    const mine = st.status === 'open' || st.status === 'skipped'
+      ? seg(s, it, { active: id, forceInput: true })
+      : seg(s, it, {});
+    if (!WHERE[id]) return `${esc(it.before)}${mine}${esc(it.after)}`;
+    const { pi, si } = WHERE[id];
+    return ESSAY[pi][si].map(x => {
+      if (typeof x === 'string') return esc(x);
+      if (x.m === id) return mine;
+      const o = s.st[x.m];
+      return esc(o.final || ITEMS[x.m].wrong);
+    }).join('');
+  }
+  function card(id) {
+    const it = ITEMS[id], st = s.st[id];
+    const src = WHERE[id] ? `This essay · paragraph ${WHERE[id].pi + 1}` : it.from;
+    const resolved = st.status === 'fixed' || st.status === 'revealed';
+    return `<div class="card d-card" data-cat="${it.cat}" data-state="${st.status}">
+      <div class="d-top"><span>${src}${st.status === 'skipped' ? ' · skipped' : ''}</span>${it.seen ? `<span class="d-seen">↻ ${it.seen}× before</span>` : ''}</div>
+      <p class="d-sent">${sentence(id)}</p>
+      ${resolved
+        ? `<p class="d-status">${st.status === 'fixed' ? '✓ Fixed by you' : 'Answer shown'}</p>`
+        : `<p class="d-rule"><strong>${esc(it.rule)}.</strong> ${it.explain}</p>${fbHTML(s, id)}${actionsHTML(s, id)}`}
+    </div>`;
+  }
+  function subs(c) {
+    return essayIds(c).filter(id => ITEMS[id].seen).sort((a, b) => ITEMS[b].seen - ITEMS[a].seen)
+      .map(id => `<span><b class="num">${ITEMS[id].seen + 1}×</b> ${esc(ITEMS[id].rule)}</span>`).join('');
+  }
+
+  const api = {
+    render(o = {}) {
+      const rank = ranked.indexOf(sel) + 1;
+      root.innerHTML = `${appBar(s)}
+      <div class="wrap">
+        <div class="pt-layout">
+          <nav class="pt-rail" aria-label="Your patterns">
+            <p class="eyebrow">Your patterns · last 6 essays</p>
+            ${ranked.map(c => {
+              const left = essayIds(c).filter(id => isOpen(s, id)).length;
+              const max = Math.max(...Object.values(HIST).flat());
+              return `<button class="pt-item" data-cat="${c}" data-act="pat" aria-current="${c === sel}">
+                <span class="pt-name"><span class="dot"></span>${CATS[c].label}</span>
+                <span class="pt-meta num">${left ? `${left} left here` : 'Clear here'} · ${sum(c)} total</span>
+                <span class="pt-bars" aria-hidden="true">${HIST[c].map((v, i) => `<i style="height:${Math.round(v / max * 100)}%"${i === 5 ? ' data-now' : ''}></i>`).join('')}</span>
+              </button>`;
+            }).join('')}
+          </nav>
+          <main data-cat="${sel}">
+            <div class="pt-head">
+              <div>
+                <p class="eyebrow">Pattern #${rank}</p>
+                <h1>${CATS[sel].label}</h1>
+                <p class="muted"><span class="num">${HIST[sel][5]}</span> in this essay · <span class="num">${sum(sel)}</span> across your last 6 essays</p>
+              </div>
+              <div class="seg" role="tablist" aria-label="View">
+                <button role="tab" data-act="view" data-view="drill" aria-selected="${view === 'drill'}">Drill</button>
+                <button role="tab" data-act="view" data-view="essay" aria-selected="${view === 'essay'}">Full essay</button>
+              </div>
+            </div>
+            ${view === 'drill' ? `
+              ${subs(sel) ? `<div class="pt-subs">${subs(sel)}</div>` : ''}
+              <h2 class="pt-sub">In this essay</h2>
+              <div class="d-list">${essayIds(sel).map(card).join('')}</div>
+              ${pastIds(sel).length ? `<h2 class="pt-sub">Same pattern, earlier essays</h2><div class="d-list">${pastIds(sel).map(card).join('')}</div>` : ''}
+            ` : `<article class="essay pt-essay" aria-label="Your essay">${renderEssay(s, { visible: () => true })}</article>`}
+          </main>
+        </div>
+      </div>`;
+      post(root, s, o);
+    },
+    advance(id) {
+      const next = nextOpen(s, drillIds(sel), id);
+      api.render({ focus: next, scrollTo: next ? `.fix-input[data-id="${next}"]` : null });
+    },
+    other(t, act) {
+      if (act === 'pat') { sel = t.dataset.cat; api.render(); }
+      else if (act === 'view') { view = t.dataset.view; api.render(); }
+      else if (act === 'select') {
+        const id = t.dataset.id;
+        reopen(s, id); sel = ITEMS[id].cat; view = 'drill';
+        api.render({ focus: id, scrollTo: `.fix-input[data-id="${id}"]` });
+      }
+    },
+  };
+  wire(root, s, api);
+  api.render();
+}
+
+/* ================= Picker wiring (reference, adapted to mount functions) ================= */
+const variants = [mountGuided, mountSpotlight, mountMargin, mountPatterns];
+const stage = document.getElementById('stage');
+const picker = document.querySelector('.proto-picker');
+const highlight = picker.querySelector('.proto-picker-highlight');
+const items = [...picker.querySelectorAll('.proto-picker-item:not(.proto-picker-replay)')];
+const replay = picker.querySelector('.proto-picker-replay');
+let current = 0;
+
+function moveHighlight() {
+  const el = items[current];
+  highlight.style.width = el.offsetWidth + 'px';
+  highlight.style.transform = `translateX(${el.offsetLeft}px)`;
+}
+function mount(i) {
+  stage.innerHTML = '';
+  requestAnimationFrame(() => { window.scrollTo(0, 0); variants[i](stage); });
+}
+function setActive(i) {
+  if (i < 0 || i >= variants.length) return;
+  current = i;
+  items.forEach((el, j) => {
+    el.toggleAttribute('data-active', j === i);
+    if (j === i) el.setAttribute('aria-current', 'true');
+    else el.removeAttribute('aria-current');
+  });
+  moveHighlight();
+  const url = new URL(location);
+  url.searchParams.set('v', i + 1);
+  history.replaceState(null, '', url);
+  mount(i);
+}
+items.forEach((el, i) => el.addEventListener('click', () => setActive(i)));
+replay?.addEventListener('click', () => mount(current));
+window.addEventListener('resize', moveHighlight);
+document.addEventListener('keydown', (e) => {
+  if (/^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName) || e.target.isContentEditable) return;
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  const num = parseInt(e.key, 10);
+  if (num >= 1 && num <= variants.length) setActive(num - 1);
+  else if (e.key === 'ArrowRight') setActive((current + 1) % variants.length);
+  else if (e.key === 'ArrowLeft') setActive((current - 1 + variants.length) % variants.length);
+  else if (e.key === 'r' || e.key === 'R') mount(current);
+});
+setActive((parseInt(new URLSearchParams(location.search).get('v'), 10) || 1) - 1);
+requestAnimationFrame(() => requestAnimationFrame(() => picker.setAttribute('data-ready', '')));
+</script>
+</body>
+</html>
