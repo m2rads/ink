@@ -192,6 +192,20 @@
 }
 
 /*
+ * Radius, after Linear's app: actions are pills, containers are soft cards,
+ * and rows inside a container follow its curve (card minus padding = row).
+ * Tailwind's stock radii are removed; `rounded-full` still gives pills and
+ * circles (buttons, chips, tabs, icon buttons).
+ */
+@theme {
+  --radius-*: initial;
+  --radius-tight: 4px; /* keyboard keys */
+  --radius-row: 6px; /* menu and command items, tooltips, skeletons */
+  --radius-field: 10px; /* single-line inputs */
+  --radius-card: 12px; /* popovers, menus, dialogs, drawers, textareas, toasts */
+}
+
+/*
  * Dark: the same roles with flipped ends. Surface steps are 0.02 L apart,
  * wider than light's 0.015, because near black smaller gaps crush together
  * on real displays. --sunken sits above --surface here: on a dark canvas,

@@ -323,7 +323,7 @@ export function DrawerDemo() {
 
 export function CommandDemo() {
   return (
-    <Command className="max-w-sm rounded-xl border">
+    <Command className="max-w-sm rounded-card border">
       <CommandInput placeholder="Look up a word…" />
       <CommandList>
         <CommandEmpty>No entries found.</CommandEmpty>
