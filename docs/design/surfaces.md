@@ -33,6 +33,7 @@ Tailwind's radii are deleted (`rounded-sm`…`rounded-3xl` produce **no CSS and 
 | `rounded-field` | 10px | Single-line inputs |
 | `rounded-row` | 6px | Rows inside a container (menu and command items, selectable list rows), tooltips, skeletons, highlight marks in text |
 | `rounded-tight` | 4px | Keyboard keys |
+| `rounded-cell` | 2px | Contribution graph days, nothing else |
 
 Nested corners: inner radius = outer radius − padding. A `rounded-card` (12px) container holding `rounded-row` (6px) items uses 6px padding (`p-1.5`). With more padding, the inner item gets a smaller step, never the same radius as its parent, or the corners gap visibly.
 

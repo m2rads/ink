@@ -34,6 +34,20 @@ Reference: `docs/prototypes/correction-loop.html`. Open it in a browser; `?v=3` 
   - **Patterns** (v4): drills sentences pulled out of the essay. Loses in-place context, but its cross-essay memory belongs in Margin.
 - Not building: user-customizable correction modes (pick one way and ship it), drag-and-drop sentence reordering (parked until users ask for it unprompted).
 
+### Home (decided 2026-10-24)
+
+Explored in a throwaway `/proto/home` with four directions; the pick is a mix of two.
+
+- **Sidebar:** shadcn's Sidebar (`collapsible="offcanvas"`), stripped to the logo, a New essay button under it, and the essays as one flat list, newest first. No dashboard nav, documents, settings or user footer.
+- **Main:** the streak and full-year contribution graph from *Rail*, with its one brand-blue "Write an essay" button; under them the *Recent* list from *Studio*.
+- **New essay:** creates an essay and opens the editor on it, empty. No form, popover or dialog: prompts are the user's own, and an empty title and body show what to do.
+- Rejected:
+  - **Studio** as a whole: a stats row and month-folder tree; more chrome than the page needs, and the graph was one panel among many.
+  - **Linked:** the graph as a day filter for the list; clever, but filtering by date is less obvious than a list, and the list lost structure.
+  - **Composer:** an inline prompt box leading the page; it pushed history down and assumed every visit starts a new essay.
+  - **Rail's** collapsed icon rail: the essay list one click away instead of always visible.
+  - The new-essay form (prompt, Section A/B, practice/mock) in a dialog, popover or sheet: too exam-centric for the entry point.
+
 ### Open questions
 
 - How often AI grammar feedback flags correct French as wrong. Measure on real essays before trusting the loop.
@@ -42,14 +56,15 @@ Reference: `docs/prototypes/correction-loop.html`. Open it in a browser; `?v=3` 
 
 ## Rendering
 
-`cacheComponents` is on in `next.config.ts`, so every page prerenders a static shell. Read request-time data (`searchParams`, `params` without `generateStaticParams`, `cookies()`, `headers()`) inside a `<Suspense>` boundary with a skeleton fallback, never at the top of a page: outside Suspense it blocks the whole route (the dev overlay reports "Next.js encountered runtime data during prerendering"). See `app/write/page.tsx`. Browser-only state (localStorage drafts, the exam clock) goes through `createLocalStore` in `app/write/local-store.ts`, which renders `null` on the server and the stored value after hydration.
+`cacheComponents` is on in `next.config.ts`, so every page prerenders a static shell. Read request-time data (`searchParams`, `params` without `generateStaticParams`, `cookies()`, `headers()`) inside a `<Suspense>` boundary with a skeleton fallback, never at the top of a page: outside Suspense it blocks the whole route (the dev overlay reports "Next.js encountered runtime data during prerendering"). See `app/write/page.tsx`. Browser-only state (localStorage drafts, the exam clock) goes through `createLocalStore` in `lib/local-store.ts`, which renders `null` on the server and the stored value after hydration.
 
 ## Design system
 
 We are building our own design system, held to shadcn's standard. **Before writing any UI, read [DESIGN.md](DESIGN.md)** and the topic file it points to: tokens, the closed variant sets of every component, and which component to use when. This section covers how components get built; DESIGN.md covers how to use them. shadcn is allowed as a source of code, not as a look: it copies component source into `components/ui/`, which we own and restyle. No other styled component library.
 
-- **shadcn for behavior-heavy components:** anything where the hard part is focus, keyboard, positioning or overlay behavior. Tooltip, Popover, Dialog/AlertDialog, Drawer (Margin's notes on phones), ToggleGroup, Tabs, DropdownMenu, Command (dictionary lookup), Sonner. Small pieces may start from it too: Button, Input, Textarea, Progress, Skeleton, Kbd, Separator. Underneath they stay Radix or Base UI. Styles, variants, tokens and motion are ours.
-  - Add one with `bunx shadcn@latest add <name>` when a screen needs it, not in bulk.
+- **shadcn for behavior-heavy components:** anything where the hard part is focus, keyboard, positioning or overlay behavior. Tooltip, Popover, Dialog/AlertDialog, Drawer (Margin's notes on phones), ToggleGroup, Tabs, DropdownMenu, Command (dictionary lookup), Sonner, Sidebar (with Sheet, for the app sidebar). Small pieces may start from it too: Button, Input, Textarea, Progress, Skeleton, Kbd, Separator. Underneath they stay Radix or Base UI. Styles, variants, tokens and motion are ours.
+  - Add one with `bunx shadcn@latest add <name>` when a screen needs it, not in bulk. Run it with `--dry-run` first: a component that depends on Button, Input, Tooltip… lists them as `overwrite`, and installing would replace our restyled versions with stock ones. Back those files up and restore them right after, then diff to confirm.
+  - shadcn sometimes renders random values (`SidebarMenuSkeleton` used `Math.random()`); with Cache Components that's a prerender error and a hydration mismatch. Make them deterministic.
   - Restyle it on arrival: swap shadcn's token classes (`bg-background`, `text-muted-foreground`, `bg-popover`, `ring-ring`, `border-input`…) for Ink's (`bg-raised`, `text-text-3`, `border-border-strong`…). Its classes generate nothing here. Don't add alias tokens for shadcn's names.
   - Replace its animation classes (`animate-in`, `fade-in-0`… from `tw-animate-css`) with our own motion; don't import `tw-animate-css`.
   - Never run `shadcn init`: its preset adds Geist as `--font-sans` and overwrites `--border` and `--primary`. `components.json` is hand-written; `shadcn add` only needs that. Added components import `cn` from `"cn"`: change it to `@/lib/utils`, whose `cn` knows our `text-*` sizes (the stock one drops `text-ui` next to `text-text-2`).

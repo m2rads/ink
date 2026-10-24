@@ -2,7 +2,7 @@
 
 import { useSyncExternalStore } from "react";
 
-import { createLocalStore } from "./local-store";
+import { createLocalStore } from "@/lib/local-store";
 import { IDLE, parseTimer, pause, resume, start, type TimerState } from "./timer";
 
 // The run's timer, saved the moment it changes: a mock run's clock must keep

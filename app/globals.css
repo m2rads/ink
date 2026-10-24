@@ -199,6 +199,7 @@
  */
 @theme {
   --radius-*: initial;
+  --radius-cell: 2px; /* contribution graph days */
   --radius-tight: 4px; /* keyboard keys */
   --radius-row: 6px; /* menu and command items, tooltips, skeletons */
   --radius-field: 10px; /* single-line inputs */

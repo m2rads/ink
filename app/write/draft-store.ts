@@ -1,9 +1,10 @@
 "use client";
 
-import { blocksFromText, type Block } from "./blocks";
-import { createLocalStore } from "./local-store";
+import { createLocalStore } from "@/lib/local-store";
 
-// Drafts live in localStorage, one per prompt and run, until essays are
+import { blocksFromText, type Block } from "./blocks";
+
+// Drafts live in localStorage, one per essay (or per sample prompt and run), until essays are
 // saved to a server.
 
 type Stored = { version: 1; blocks: Block[]; savedAt: string };

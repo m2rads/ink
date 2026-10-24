@@ -3,6 +3,7 @@ import { Suspense } from "react";
 
 import { Skeleton } from "@/components/ui/skeleton";
 
+import { EssayScreen } from "./essay-screen";
 import { WritingScreen, type Prompt } from "./writing-screen";
 
 export const metadata: Metadata = {
@@ -31,7 +32,8 @@ const PROMPTS: Record<Prompt["section"], Omit<Prompt, "run">> = {
   },
 };
 
-// Until there's a screen to choose a run: /write?section=A&run=mock.
+// /write?essay=<id> opens one of the user's essays (from /home). The sample
+// exam runs stay at /write?section=A&run=mock until runs get their own entry.
 // Search params are request-time data, so they're read inside Suspense: the
 // skeleton prerenders as the static shell and the run streams in.
 export default function WritePage({ searchParams }: PageProps<"/write">) {
@@ -44,6 +46,7 @@ export default function WritePage({ searchParams }: PageProps<"/write">) {
 
 async function Run({ searchParams }: Pick<PageProps<"/write">, "searchParams">) {
   const params = await searchParams;
+  if (typeof params.essay === "string") return <EssayScreen id={params.essay} />;
   const section = params.section === "A" ? "A" : "B";
   const run = params.run === "mock" ? "mock" : "practice";
   return <WritingScreen prompt={{ ...PROMPTS[section], run }} />;
