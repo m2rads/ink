@@ -177,6 +177,21 @@
 }
 
 /*
+ * Motion. Overlays enter with ease-out and leave faster with ease-in; only
+ * opacity and scale animate. Durations stay under 300ms.
+ */
+@theme {
+  /* Stronger than Tailwind's default ease-out: the fast start reads as an
+     instant response. Same curve as the correction-loop prototype. */
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  /* Sheets and their backdrop, which travel further than popovers. */
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+  /* Things already on screen that move between places (the tab indicator):
+     accelerate, then brake. */
+  --ease-in-out: cubic-bezier(0.645, 0.045, 0.355, 1);
+}
+
+/*
  * Dark: the same roles with flipped ends. Surface steps are 0.02 L apart,
  * wider than light's 0.015, because near black smaller gaps crush together
  * on real displays. --sunken sits above --surface here: on a dark canvas,
@@ -240,6 +255,22 @@
 @media (color-gamut: p3) and (prefers-color-scheme: dark) {
   :root {
     --brand-hover: oklch(0.555 0.226 257.85);
+  }
+}
+
+/*
+ * Reduced motion: no movement and no fades, anywhere (toasts and spinners
+ * included). Near-zero rather than none so transitionend still fires and
+ * Base UI can unmount closing popups.
+ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }
 

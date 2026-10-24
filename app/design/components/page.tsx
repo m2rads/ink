@@ -100,8 +100,9 @@ export default function ComponentsPage() {
         <h1 className="text-heading mt-2">Components</h1>
         <p className="text-body mt-2 max-w-prose text-text-2">
           The shadcn components Ink uses, restyled to its tokens. Built on Base
-          UI, copied into <code className="text-ui">components/ui/</code>. No
-          motion yet; that comes in the motion pass.
+          UI, copied into <code className="text-ui">components/ui/</code>.
+          Overlays fade and scale from their trigger; with reduced motion on,
+          nothing moves.
         </p>
 
         <nav aria-label="Sections" className="mt-8 flex flex-wrap gap-x-5 gap-y-2 text-ui">
