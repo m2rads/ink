@@ -58,6 +58,15 @@ Explored in a throwaway `/proto/home` with four directions; the pick is a mix of
 
 `cacheComponents` is on in `next.config.ts`, so every page prerenders a static shell. Read request-time data (`searchParams`, `params` without `generateStaticParams`, `cookies()`, `headers()`) inside a `<Suspense>` boundary with a skeleton fallback, never at the top of a page: outside Suspense it blocks the whole route (the dev overlay reports "Next.js encountered runtime data during prerendering"). See `app/write/page.tsx`. Browser-only state (localStorage drafts, the exam clock) goes through `createLocalStore` in `lib/local-store.ts`, which renders `null` on the server and the stored value after hydration.
 
+## AI
+
+Vercel's AI SDK (v7: `instructions`, not `system`; structured output is `generateText` + `Output.object`) through AI Gateway, so a model is a string like `anthropic/claude-sonnet-5.5` and no provider package is needed. Key: `AI_GATEWAY_API_KEY` in `.env.local` (on Vercel the deployment's OIDC token works instead).
+
+- `lib/ai/config.ts`: which model runs each task (`check` an essay, judge a `fix`), as weighted arms. Read per request from Edge Config key `ai` when `EDGE_CONFIG` is set (live within ~1 min, no redeploy), else the `INK_AI` env var (same JSON; needs a restart, and on Vercel a redeploy), else the default. A bad config logs and falls back; it never stops checks. An essay's id picks its arm, so one essay always gets one model.
+- `lib/ai/check.ts`: `checkEssay`, `judgeFix`. Each call logs one JSON line (`ai.check` / `ai.fix`: arm, model, ms, mistakes, dropped quotes, tokens); that's what an A/B comparison is read from.
+- `lib/ai/correction.ts`: client-safe. The mistake schema, `anchorMistakes` (the model quotes the wrong words; offsets are found here, and a quote not in the text is dropped, never guessed), `matchesAccepted` (a fix matching an accepted answer passes with no model call).
+- `app/write/actions.ts`: the server functions the correction view calls. Public POST endpoints: validate and cap input there, and add rate limiting before launch.
+
 ## Design system
 
 We are building our own design system, held to shadcn's standard. **Before writing any UI, read [DESIGN.md](DESIGN.md)** and the topic file it points to: tokens, the closed variant sets of every component, and which component to use when. This section covers how components get built; DESIGN.md covers how to use them. shadcn is allowed as a source of code, not as a look: it copies component source into `components/ui/`, which we own and restyle. No other styled component library.

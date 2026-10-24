@@ -2,6 +2,7 @@
 
 import { CheckIcon, ClockIcon, PauseIcon, PlayIcon } from "lucide-react";
 
+import { AppBar } from "@/components/app-bar";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -59,33 +60,32 @@ export function WritingScreen({ prompt }: { prompt: Prompt }) {
 
   return (
     <TooltipProvider>
+      <AppBar>
+        <p className="min-w-0 truncate text-label text-text-3">
+          Essays <span aria-hidden>/</span>{" "}
+          <span className="text-text" lang="fr">
+            {prompt.title}
+          </span>
+        </p>
+        <div className="flex h-4 shrink-0 items-center gap-3 text-label text-text-3">
+          <span className="max-sm:hidden">Section {prompt.section}</span>
+          <Separator orientation="vertical" className="max-sm:hidden" />
+          <span className="max-sm:hidden">{RUN_LABEL[prompt.run]}</span>
+          <Separator orientation="vertical" className="max-sm:hidden" />
+          <ExamClock
+            clock={clock}
+            durationMs={durationMs}
+            canPause={!mock}
+            onPause={() => pauseTimer(runId)}
+            onResume={() => resumeTimer(runId)}
+          />
+          <Separator orientation="vertical" />
+          <WordCount count={blocks ? countWords(blocks) : null} min={prompt.minWords} />
+        </div>
+      </AppBar>
+
       {/* sm:px-10 leaves room in the left margin for the paragraph handles. */}
       <main className="mx-auto w-full max-w-3xl px-4 sm:px-10">
-        {/* Tabular figures throughout, so the ticking clock and changing counts never shift their neighbors. */}
-        <header className="sticky top-0 z-10 flex h-14 items-center justify-between gap-4 border-b bg-bg tabular-nums">
-          <p className="min-w-0 truncate text-label text-text-3">
-            Essays <span aria-hidden>/</span>{" "}
-            <span className="text-text" lang="fr">
-              {prompt.title}
-            </span>
-          </p>
-          <div className="flex h-4 shrink-0 items-center gap-3 text-label text-text-3">
-            <span className="max-sm:hidden">Section {prompt.section}</span>
-            <Separator orientation="vertical" className="max-sm:hidden" />
-            <span className="max-sm:hidden">{RUN_LABEL[prompt.run]}</span>
-            <Separator orientation="vertical" className="max-sm:hidden" />
-            <ExamClock
-              clock={clock}
-              durationMs={durationMs}
-              canPause={!mock}
-              onPause={() => pauseTimer(runId)}
-              onResume={() => resumeTimer(runId)}
-            />
-            <Separator orientation="vertical" />
-            <WordCount count={blocks ? countWords(blocks) : null} min={prompt.minWords} />
-          </div>
-        </header>
-
         <TimeAnnouncer clock={clock} mock={mock} />
 
         <section className="pt-10">

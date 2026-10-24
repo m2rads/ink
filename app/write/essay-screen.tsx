@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useLayoutEffect, useRef } from "react";
 
+import { AppBar, AppBarSkeleton } from "@/components/app-bar";
 import { Skeleton } from "@/components/ui/skeleton";
 import { essayTitle, updateEssay, useEssays } from "@/lib/essays";
 
@@ -44,8 +45,8 @@ export function EssayScreen({ id }: { id: string }) {
   }
 
   return (
-    <main className="mx-auto w-full max-w-3xl px-4 sm:px-10">
-      <header className="sticky top-0 z-10 flex h-14 items-center justify-between gap-4 border-b bg-bg tabular-nums">
+    <>
+      <AppBar>
         <p className="min-w-0 truncate text-label text-text-3">
           <Link href="/home" className="transition-colors hover:text-text">
             Home
@@ -58,24 +59,26 @@ export function EssayScreen({ id }: { id: string }) {
         <span className="shrink-0 text-label text-text-3">
           {essay.words.toLocaleString("en")} {essay.words === 1 ? "word" : "words"}
         </span>
-      </header>
+      </AppBar>
 
-      <TitleField
-        value={essay.title}
-        autoFocus={isNew}
-        onChange={(title) => updateEssay(id, { title })}
-      />
+      <main className="mx-auto w-full max-w-3xl px-4 sm:px-10">
+        <TitleField
+          value={essay.title}
+          autoFocus={isNew}
+          onChange={(title) => updateEssay(id, { title })}
+        />
 
-      <EssayEditor
-        id={BODY_ID}
-        value={blocks}
-        onValueChange={onBodyChange}
-        aria-label="Your essay"
-        placeholder="Écrivez votre texte ici…"
-        autoFocus={!isNew}
-        className="mt-6 max-w-prose min-h-96 pb-40"
-      />
-    </main>
+        <EssayEditor
+          id={BODY_ID}
+          value={blocks}
+          onValueChange={onBodyChange}
+          aria-label="Your essay"
+          placeholder="Écrivez votre texte ici…"
+          autoFocus={!isNew}
+          className="mt-6 max-w-prose min-h-96 pb-40"
+        />
+      </main>
+    </>
   );
 }
 
@@ -146,13 +149,15 @@ function TitleField({
 
 function ScreenSkeleton() {
   return (
-    <main className="mx-auto w-full max-w-3xl px-4 sm:px-10" aria-busy>
-      <div className="h-14 border-b" />
-      <div className="grid max-w-prose gap-3 pt-10" aria-hidden>
-        <Skeleton className="h-8 w-3/5" />
-        <Skeleton className="mt-4 h-4 w-full" />
-        <Skeleton className="h-4 w-11/12" />
-      </div>
-    </main>
+    <>
+      <AppBarSkeleton />
+      <main className="mx-auto w-full max-w-3xl px-4 sm:px-10" aria-busy>
+        <div className="grid max-w-prose gap-3 pt-10" aria-hidden>
+          <Skeleton className="h-8 w-3/5" />
+          <Skeleton className="mt-4 h-4 w-full" />
+          <Skeleton className="h-4 w-11/12" />
+        </div>
+      </main>
+    </>
   );
 }

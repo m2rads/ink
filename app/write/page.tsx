@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
 
+import { AppBarSkeleton } from "@/components/app-bar";
 import { Skeleton } from "@/components/ui/skeleton";
 
 import { EssayScreen } from "./essay-screen";
@@ -54,13 +55,15 @@ async function Run({ searchParams }: Pick<PageProps<"/write">, "searchParams">) 
 
 function WritingSkeleton() {
   return (
-    <main className="mx-auto w-full max-w-3xl px-4 sm:px-6" aria-busy>
-      <div className="h-14 border-b" />
-      <div className="grid max-w-prose gap-3 pt-10" aria-hidden>
-        <Skeleton className="h-8 w-4/5" />
-        <Skeleton className="mt-2 h-4 w-full" />
-        <Skeleton className="h-4 w-2/3" />
-      </div>
-    </main>
+    <>
+      <AppBarSkeleton />
+      <main className="mx-auto w-full max-w-3xl px-4 sm:px-10" aria-busy>
+        <div className="grid max-w-prose gap-3 pt-10" aria-hidden>
+          <Skeleton className="h-8 w-4/5" />
+          <Skeleton className="mt-2 h-4 w-full" />
+          <Skeleton className="h-4 w-2/3" />
+        </div>
+      </main>
+    </>
   );
 }
