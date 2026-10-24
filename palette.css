@@ -1,0 +1,104 @@
+/*
+ * Brand palette built on Geist's --ds-blue-800 = oklch(0.5151 0.2307 257.85).
+ *
+ * Gray-first, Linear-style: a near-black (never #000) floor, a four-step
+ * surface ladder, three hairlines. Buttons, links, focus and selection are
+ * all gray; the brand blue is held back for the logo mark and rare
+ * emphasis. Every neutral is tinted with the brand hue at very low chroma
+ * so the grays carry a faint blue cast instead of reading as dead gray.
+ *
+ * Theme follows the OS by default. Force one with data-theme="light|dark"
+ * on <html> (or any subtree).
+ */
+
+:root {
+  color-scheme: light dark;
+
+  /* One hue for the whole system: brand ramp and every neutral. */
+  --brand-hue: 257.85;
+
+  /* ── Brand ramp ─────────────────────────────────────────────
+     Linear L spacing (0.97 → 0.22), chroma as a fraction of each
+     step's sRGB ceiling (65% at the tints, peaking ~96% at 600).
+     blue-600 is the sRGB-clamped --ds-blue-800; the P3 block below
+     restores its full chroma. */
+  --blue-50: oklch(0.97 0.009 var(--brand-hue));
+  --blue-100: oklch(0.895 0.036 var(--brand-hue));
+  --blue-200: oklch(0.82 0.068 var(--brand-hue));
+  --blue-300: oklch(0.745 0.106 var(--brand-hue));
+  --blue-400: oklch(0.67 0.15 var(--brand-hue));
+  --blue-500: oklch(0.595 0.201 var(--brand-hue));
+  --blue-600: oklch(0.515 0.182 var(--brand-hue)); /* brand */
+  --blue-700: oklch(0.445 0.151 var(--brand-hue));
+  --blue-800: oklch(0.37 0.112 var(--brand-hue));
+  --blue-900: oklch(0.295 0.076 var(--brand-hue));
+  --blue-950: oklch(0.22 0.045 var(--brand-hue));
+
+  /* ── Canvas & surface ladder ────────────────────────────────
+     Light steps are 0.015 L apart; dark steps 0.02, because near
+     black, smaller gaps crush together on real displays. */
+  --bg-floor: light-dark(oklch(0.995 0.002 var(--brand-hue)), oklch(0.07 0.006 var(--brand-hue)));
+  --surface-1: light-dark(oklch(0.98 0.003 var(--brand-hue)), oklch(0.17 0.004 var(--brand-hue)));
+  --surface-2: light-dark(oklch(0.965 0.003 var(--brand-hue)), oklch(0.19 0.004 var(--brand-hue)));
+  --surface-3: light-dark(oklch(0.95 0.004 var(--brand-hue)), oklch(0.21 0.004 var(--brand-hue)));
+  --surface-4: light-dark(oklch(0.935 0.004 var(--brand-hue)), oklch(0.23 0.005 var(--brand-hue)));
+
+  /* ── Hairlines ── decorative separators and card edges. */
+  --hairline-1: light-dark(oklch(0.91 0.006 var(--brand-hue)), oklch(0.27 0.008 var(--brand-hue)));
+  --hairline-2: light-dark(oklch(0.87 0.008 var(--brand-hue)), oklch(0.32 0.01 var(--brand-hue)));
+  --hairline-3: light-dark(oklch(0.82 0.01 var(--brand-hue)), oklch(0.37 0.01 var(--brand-hue)));
+
+  /* ── Text ──
+     1 headings/body, 2 secondary body, 3 meta & placeholders,
+     4 disabled/decorative only (not for content people must read). */
+  --text-1: light-dark(oklch(0.21 0.01 var(--brand-hue)), oklch(0.98 0.002 var(--brand-hue)));
+  --text-2: light-dark(oklch(0.38 0.014 var(--brand-hue)), oklch(0.87 0.014 var(--brand-hue)));
+  --text-3: light-dark(oklch(0.5 0.015 var(--brand-hue)), oklch(0.78 0.015 var(--brand-hue)));
+  --text-4: light-dark(oklch(0.62 0.012 var(--brand-hue)), oklch(0.64 0.012 var(--brand-hue)));
+
+  /* ── Primary actions ── gray, not blue: an inverted fill, the
+     darkest ink on light and the lightest on dark. Links use
+     --text-1 with an underline; selection uses --surface-3. */
+  --primary: light-dark(oklch(0.21 0.01 var(--brand-hue)), oklch(0.98 0.002 var(--brand-hue)));
+  --primary-hover: light-dark(oklch(0.33 0.012 var(--brand-hue)), oklch(0.88 0.008 var(--brand-hue)));
+  --primary-fg: var(--bg-floor);
+  --focus-ring: var(--text-3);
+
+  /* ── Brand ── use rarely: the logo mark and at most one emphasis
+     per page (a "New" badge, a single hero CTA). Never for links,
+     focus, selection or hover states. */
+  --brand: var(--blue-600);
+  --brand-hover: light-dark(var(--blue-700), color-mix(in oklch, var(--blue-600), var(--blue-500)));
+  --brand-fg: oklch(1 0 0);
+
+  /* ── Status ── text/icon colors only. Same L per theme where the
+     hue allows, each at 80% of its own sRGB chroma ceiling. */
+  --success: light-dark(oklch(0.5 0.11 150), oklch(0.78 0.172 150));
+  --warning: light-dark(oklch(0.52 0.09 70), oklch(0.82 0.136 80));
+  --danger: light-dark(oklch(0.52 0.169 25), oklch(0.78 0.103 25));
+}
+
+[data-theme="light"] {
+  color-scheme: light;
+}
+
+[data-theme="dark"] {
+  color-scheme: dark;
+}
+
+/* Wide-gamut screens get the brand's full chroma, same L and H. */
+@media (color-gamut: p3) {
+  :root {
+    --blue-50: oklch(0.97 0.01 var(--brand-hue));
+    --blue-100: oklch(0.895 0.039 var(--brand-hue));
+    --blue-200: oklch(0.82 0.074 var(--brand-hue));
+    --blue-300: oklch(0.745 0.115 var(--brand-hue));
+    --blue-400: oklch(0.67 0.162 var(--brand-hue));
+    --blue-500: oklch(0.595 0.22 var(--brand-hue));
+    --blue-600: oklch(0.515 0.231 var(--brand-hue)); /* exact --ds-blue-800 */
+    --blue-700: oklch(0.445 0.191 var(--brand-hue));
+    --blue-800: oklch(0.37 0.142 var(--brand-hue));
+    --blue-900: oklch(0.295 0.097 var(--brand-hue));
+    --blue-950: oklch(0.22 0.057 var(--brand-hue));
+  }
+}

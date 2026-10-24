@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Palette Preview</title>
+<link rel="stylesheet" href="palette.css">
+<style>
+  * { box-sizing: border-box; margin: 0; }
+  body {
+    background: var(--bg-floor);
+    color: var(--text-1);
+    font: 15px/1.5 system-ui, -apple-system, "Inter", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1040px; margin: 0 auto; padding: 0 16px; }
+  nav { border-bottom: 1px solid var(--hairline-1); }
+  nav .wrap { display: flex; align-items: center; gap: 24px; height: 56px; }
+  .mark { width: 18px; height: 18px; border-radius: 5px; background: var(--brand); }
+  nav a { color: var(--text-3); text-decoration: none; font-size: 14px; }
+  nav a:hover { color: var(--text-1); }
+  nav .spacer { flex: 1; }
+  .mark { flex-shrink: 0; }
+  @media (max-width: 640px) { nav a { display: none; } }
+  button {
+    font: inherit; font-size: 14px; font-weight: 500; cursor: pointer;
+    height: 34px; padding: 0 14px; border-radius: 8px; border: 1px solid transparent; white-space: nowrap;
+  }
+  button:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+  .primary { background: var(--primary); color: var(--primary-fg); }
+  .primary:hover { background: var(--primary-hover); }
+  .badge { display: inline-block; margin-bottom: 20px; padding: 2px 10px; border-radius: 999px; background: var(--brand); color: var(--brand-fg); font-size: 12px; font-weight: 500; }
+  .ghost { background: var(--surface-2); color: var(--text-1); border-color: var(--hairline-2); }
+  .ghost:hover { background: var(--surface-3); }
+  .toggle { background: transparent; color: var(--text-2); border-color: var(--hairline-2); }
+  header { padding: 96px 0 72px; }
+  h1 { font-size: clamp(40px, 7vw, 64px); line-height: 1.05; letter-spacing: -0.035em; font-weight: 600; max-width: 14ch; }
+  .lede { margin-top: 20px; color: var(--text-2); font-size: 18px; max-width: 46ch; }
+  .ctas { margin-top: 32px; display: flex; gap: 10px; flex-wrap: wrap; }
+  section { padding: 48px 0; border-top: 1px solid var(--hairline-1); }
+  h2 { font-size: 13px; font-weight: 500; color: var(--text-3); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 20px; }
+  .ladder { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
+  .chip { border-radius: 12px; border: 1px solid var(--hairline-1); padding: 16px; min-height: 104px; display: flex; flex-direction: column; justify-content: flex-end; }
+  .chip b { font-weight: 500; font-size: 13px; }
+  .chip span { color: var(--text-3); font: 12px/1.4 ui-monospace, "SF Mono", monospace; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
+  .card { background: var(--surface-1); border: 1px solid var(--hairline-1); border-radius: 12px; padding: 20px; }
+  .card:hover { background: var(--surface-2); border-color: var(--hairline-2); }
+  .card h3 { font-size: 16px; font-weight: 500; letter-spacing: -0.01em; }
+  .card p { color: var(--text-2); margin-top: 6px; }
+  .card .meta { color: var(--text-3); font-size: 13px; margin-top: 14px; display: flex; gap: 12px; flex-wrap: wrap; }
+  .card a, footer a { color: var(--text-1); text-decoration: underline; text-decoration-color: var(--hairline-3); text-underline-offset: 3px; }
+  .card a:hover, footer a:hover { text-decoration-color: currentColor; }
+  .row { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--hairline-1); font-size: 14px; }
+  .row.sel { background: var(--surface-3); }
+  .row .dis { color: var(--text-4); margin-left: auto; }
+  .list { background: var(--surface-1); border: 1px solid var(--hairline-1); border-radius: 12px; overflow: hidden; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; }
+  .ramp { display: grid; grid-template-columns: repeat(11, 1fr); border-radius: 10px; overflow: hidden; }
+  .ramp div { height: 56px; display: flex; align-items: flex-end; padding: 6px; font: 11px ui-monospace, monospace; }
+  input { font: inherit; font-size: 16px; height: 38px; width: 100%; max-width: 360px; padding: 0 12px; border-radius: 8px; background: var(--surface-1); border: 1px solid var(--hairline-2); color: var(--text-1); }
+  input::placeholder { color: var(--text-3); }
+  input:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 1px; border-color: transparent; }
+  footer { border-top: 1px solid var(--hairline-1); padding: 32px 0 64px; color: var(--text-3); font-size: 13px; }
+</style>
+</head>
+<body>
+<nav>
+  <div class="wrap">
+    <div class="mark"></div>
+    <a href="#">Product</a><a href="#">Method</a><a href="#">Customers</a><a href="#">Changelog</a>
+    <div class="spacer"></div>
+    <button class="toggle" id="toggle">Light</button>
+    <button class="primary">Sign up</button>
+  </div>
+</nav>
+
+<main class="wrap">
+  <header>
+    <span class="badge">New</span>
+    <h1>Plan and build products with less noise.</h1>
+    <p class="lede">Gray-first: a dark canvas, a four-step surface ladder and hairline borders. Blue shows up only on the logo mark and this one badge.</p>
+    <div class="ctas">
+      <button class="primary">Start building</button>
+      <button class="ghost">Read the changelog</button>
+    </div>
+  </header>
+
+  <section>
+    <h2>Canvas &amp; surface ladder</h2>
+    <div class="ladder">
+      <div class="chip" style="background:var(--bg-floor)"><b>bg-floor</b><span>--bg-floor</span></div>
+      <div class="chip" style="background:var(--surface-1)"><b>surface-1</b><span>cards</span></div>
+      <div class="chip" style="background:var(--surface-2)"><b>surface-2</b><span>hover</span></div>
+      <div class="chip" style="background:var(--surface-3)"><b>surface-3</b><span>pressed / nested</span></div>
+      <div class="chip" style="background:var(--surface-4)"><b>surface-4</b><span>menus / popovers</span></div>
+    </div>
+    <div class="ladder" style="margin-top:12px">
+      <div class="chip" style="border:2px solid var(--hairline-1)"><b>hairline-1</b><span>dividers</span></div>
+      <div class="chip" style="border:2px solid var(--hairline-2)"><b>hairline-2</b><span>inputs, hover edges</span></div>
+      <div class="chip" style="border:2px solid var(--hairline-3)"><b>hairline-3</b><span>strong edges</span></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Cards on surface-1</h2>
+    <div class="cards">
+      <div class="card"><h3>Issue tracking</h3><p>Secondary body copy sits on text-2 and stays readable on every surface.</p><div class="meta"><span>Updated 2h ago</span><a href="#">Learn more →</a></div></div>
+      <div class="card"><h3>Cycles</h3><p>Hover this card: it lifts one step to surface-2 and its edge to hairline-2.</p><div class="meta"><span style="color:var(--success)">● On track</span><span style="color:var(--warning)">● At risk</span><span style="color:var(--danger)">● Blocked</span></div></div>
+      <div class="card"><h3>Waitlist</h3><p>Placeholders use text-3; the focus ring is gray too.</p><div style="margin-top:14px"><input placeholder="you@company.com" aria-label="Email"></div></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>List with selected row</h2>
+    <div class="list">
+      <div class="row"><span class="dot" style="background:var(--success)"></span>Ship the onboarding flow<span class="dis">ENG-412</span></div>
+      <div class="row sel"><span class="dot" style="background:var(--text-1)"></span>Selected row uses surface-3<span class="dis">ENG-413</span></div>
+      <div class="row" style="border-bottom:0"><span class="dot" style="background:var(--warning)"></span>Audit dark-mode contrast<span class="dis">ENG-414</span></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Brand ramp · hue 257.85</h2>
+    <div class="ramp" id="ramp"></div>
+  </section>
+</main>
+
+<footer><div class="wrap">Footer text on text-3 · <a href="#">Link on text-1</a></div></footer>
+
+<script>
+  const ramp = document.getElementById('ramp');
+  [50,100,200,300,400,500,600,700,800,900,950].forEach((s, i) => {
+    const d = document.createElement('div');
+    d.style.background = `var(--blue-${s})`;
+    d.style.color = i < 5 ? 'oklch(0.21 0.01 257.85)' : 'oklch(0.98 0 0)';
+    d.textContent = s;
+    ramp.appendChild(d);
+  });
+  const root = document.documentElement, btn = document.getElementById('toggle');
+  btn.onclick = () => {
+    const next = root.dataset.theme === 'dark' ? 'light' : 'dark';
+    root.dataset.theme = next;
+    btn.textContent = next === 'dark' ? 'Light' : 'Dark';
+  };
+</script>
+</body>
+</html>

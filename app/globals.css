@@ -1,26 +1,218 @@
 @import "tailwindcss";
 
+/*
+ * Color. Gray-first, after Linear's marketing site: a near-black (never
+ * #000) floor in dark mode, surfaces that lift in small L steps, hairline
+ * borders. Buttons, focus and selection are gray. Every neutral carries
+ * the brand hue at very low chroma, so grays read faintly cool, not dead.
+ *
+ * Chromatic color has two jobs only:
+ * - --brand (Geist's --ds-blue-800): the logo mark and at most one emphasis
+ *   per page. Never links, focus, selection or hover states.
+ * - Mistake categories and status (--c-*, --ok, --warn): one L per theme,
+ *   each at 80% of its own sRGB chroma ceiling, so no category looks
+ *   louder than another. All pass as 12px text on --surface.
+ */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  color-scheme: light dark;
+
+  /* Surfaces, lowest to highest. */
+  --bg: oklch(0.995 0.002 257.85);
+  --surface: oklch(0.98 0.003 257.85); /* cards, notes */
+  --sunken: oklch(0.965 0.003 257.85); /* chips, tracks, hover fills */
+  --raised: oklch(1 0 0); /* tooltips, popovers; pair with --border */
+
+  --text: oklch(0.21 0.01 257.85);
+  --text-2: oklch(0.38 0.014 257.85);
+  --text-3: oklch(0.5 0.015 257.85); /* meta, placeholders */
+
+  --border: oklch(0.91 0.006 257.85); /* hairlines, decorative */
+  --border-strong: oklch(0.82 0.01 257.85); /* inputs, ghost buttons */
+
+  /* Primary actions are an inverted gray fill, not brand blue. */
+  --primary: var(--text);
+  --primary-hover: oklch(0.33 0.012 257.85);
+  --primary-fg: var(--bg);
+  --focus-ring: var(--text-3);
+
+  --brand: oklch(0.515 0.182 257.85);
+  --brand-hover: oklch(0.445 0.151 257.85);
+  --brand-fg: oklch(1 0 0);
+
+  --ok: oklch(0.5 0.099 155);
+  --warn: oklch(0.52 0.119 45);
+
+  --c-prep: oklch(0.5 0.101 245);
+  --c-accord: oklch(0.5 0.208 305);
+  --c-conj: oklch(0.5 0.087 70);
+  --c-ortho: oklch(0.5 0.161 20);
 }
 
+/*
+ * Color utilities come only from the tokens above, the way the type scale
+ * below allows only its own sizes.
+ */
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-*: initial;
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-sunken: var(--sunken);
+  --color-raised: var(--raised);
+  --color-text: var(--text);
+  --color-text-2: var(--text-2);
+  --color-text-3: var(--text-3);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
+  --color-primary-fg: var(--primary-fg);
+  --color-focus-ring: var(--focus-ring);
+  --color-brand: var(--brand);
+  --color-brand-hover: var(--brand-hover);
+  --color-brand-fg: var(--brand-fg);
+  --color-ok: var(--ok);
+  --color-warn: var(--warn);
+  --color-c-prep: var(--c-prep);
+  --color-c-accord: var(--c-accord);
+  --color-c-conj: var(--c-conj);
+  --color-c-ortho: var(--c-ortho);
+
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-serif: var(--font-literata), ui-serif, Georgia, serif;
 }
 
+/*
+ * Type scale. Steps are named by role, and Tailwind's default sizes are
+ * removed so every size in the app comes from this list.
+ *
+ * Interface (Inter): dense steps at the bottom for chrome, wider jumps above.
+ * Essay (Literata): one fluid reading size, 17px on phones to 19px on desktop.
+ */
+@theme {
+  --text-*: initial;
+
+  /* Counts, timestamps, keyboard hints. The floor: nothing smaller. */
+  --text-caption: 0.75rem;
+  --text-caption--line-height: 1.4;
+  --text-caption--letter-spacing: 0.01em;
+
+  /* Chips, note headers, meta in the app bar. */
+  --text-label: 0.8125rem;
+  --text-label--line-height: 1.4;
+
+  /* Buttons, note explanations, dense controls. */
+  --text-ui: 0.875rem;
+  --text-ui--line-height: 1.45;
+
+  /* Default interface text and form inputs (16px keeps iOS from zooming). */
+  --text-body: 1rem;
+  --text-body--line-height: 1.5;
+
+  /* Rule titles in notes, card headings. */
+  --text-title: 1.125rem;
+  --text-title--line-height: 1.3;
+  --text-title--letter-spacing: -0.01em;
+  --text-title--font-weight: 600;
+
+  /* Page headings. */
+  --text-heading: 1.5rem;
+  --text-heading--line-height: 1.2;
+  --text-heading--letter-spacing: -0.015em;
+  --text-heading--font-weight: 600;
+
+  /* Rare: empty states and onboarding moments. */
+  --text-display: 2rem;
+  --text-display--line-height: 1.1;
+  --text-display--letter-spacing: -0.02em;
+  --text-display--font-weight: 650;
+
+  /* Essay body, and the inline fix input that sits inside it. */
+  --text-essay: clamp(1.0625rem, 1rem + 0.25vw, 1.1875rem);
+  --text-essay--line-height: 1.7;
+
+  /* The essay prompt shown above the text. */
+  --text-essay-title: 1.75rem;
+  --text-essay-title--line-height: 1.2;
+  --text-essay-title--letter-spacing: -0.01em;
+  --text-essay-title--font-weight: 600;
+}
+
+/*
+ * Dark: the same roles with flipped ends. Surface steps are 0.02 L apart,
+ * wider than light's 0.015, because near black smaller gaps crush together
+ * on real displays. --sunken sits above --surface here: on a dark canvas,
+ * fills and hovers lift.
+ */
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    --bg: oklch(0.07 0.006 257.85);
+    --surface: oklch(0.17 0.004 257.85);
+    --sunken: oklch(0.19 0.004 257.85);
+    --raised: oklch(0.23 0.005 257.85);
+
+    --text: oklch(0.98 0.002 257.85);
+    --text-2: oklch(0.87 0.014 257.85);
+    --text-3: oklch(0.78 0.015 257.85);
+
+    --border: oklch(0.27 0.008 257.85);
+    --border-strong: oklch(0.37 0.01 257.85);
+
+    --primary-hover: oklch(0.88 0.008 257.85);
+
+    /* Lighter on hover, but not as light as blue-500: white text there
+       drops below 4.5:1. */
+    --brand-hover: oklch(0.555 0.192 257.85);
+
+    --ok: oklch(0.8 0.158 155);
+    --warn: oklch(0.8 0.098 45);
+
+    --c-prep: oklch(0.8 0.087 245);
+    --c-accord: oklch(0.8 0.101 305);
+    --c-conj: oklch(0.8 0.13 70);
+    --c-ortho: oklch(0.8 0.092 20);
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+/* Wide-gamut screens get the brand's full chroma, same L and H. */
+@media (color-gamut: p3) {
+  :root {
+    --brand: oklch(0.515 0.231 257.85); /* exact --ds-blue-800 */
+    --brand-hover: oklch(0.445 0.191 257.85);
+  }
+}
+
+@media (color-gamut: p3) and (prefers-color-scheme: dark) {
+  :root {
+    --brand-hover: oklch(0.555 0.226 257.85);
+  }
+}
+
+@layer base {
+  html {
+    font-synthesis: none;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-sans);
+    font-size: var(--text-body);
+    line-height: var(--text-body--line-height);
+  }
+
+  h1,
+  h2,
+  h3 {
+    text-wrap: balance;
+  }
+}
+
+/* Small uppercase section labels. Casing stays in the source string. */
+@utility eyebrow {
+  font-size: var(--text-caption);
+  line-height: var(--text-caption--line-height);
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
 }
