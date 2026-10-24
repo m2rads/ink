@@ -17,23 +17,23 @@ const uiSteps = [
 export default function TypeSpecimen() {
   return (
     <main className="mx-auto w-full max-w-5xl px-4 py-16 sm:px-6">
-      <p className="eyebrow opacity-60">Design system</p>
+      <p className="eyebrow text-text-3">Design system</p>
       <h1 className="text-heading mt-2">Type scale</h1>
-      <p className="text-body mt-2 max-w-prose opacity-70">
+      <p className="text-body mt-2 max-w-prose text-text-2">
         Inter for the interface, Literata for the essay. Every size in the app
         comes from one of these steps.
       </p>
 
       <section className="mt-14">
-        <h2 className="eyebrow opacity-60">Interface · Inter</h2>
-        <div className="mt-4 divide-y divide-current/10 border-y border-current/10">
+        <h2 className="eyebrow text-text-3">Interface · Inter</h2>
+        <div className="mt-4 divide-y border-y">
           {uiSteps.map((step) => (
             <div
               key={step.token}
               className="grid gap-2 py-5 sm:grid-cols-[180px_minmax(0,1fr)] sm:gap-8"
             >
-              <div className="text-caption opacity-60">
-                <code className="font-medium opacity-100">{step.token}</code>
+              <div className="text-caption text-text-3">
+                <code className="font-medium text-text">{step.token}</code>
                 <div className="tabular-nums">{step.size}</div>
                 <div>{step.use}</div>
               </div>
@@ -44,12 +44,12 @@ export default function TypeSpecimen() {
       </section>
 
       <section className="mt-14" lang="fr">
-        <h2 className="eyebrow opacity-60" lang="en">
+        <h2 className="eyebrow text-text-3" lang="en">
           Essay · Literata
         </h2>
-        <div className="mt-4 grid gap-2 border-y border-current/10 py-6 sm:grid-cols-[180px_minmax(0,1fr)] sm:gap-8">
-          <div className="text-caption opacity-60" lang="en">
-            <code className="font-medium opacity-100">text-essay-title</code>
+        <div className="mt-4 grid gap-2 border-y py-6 sm:grid-cols-[180px_minmax(0,1fr)] sm:gap-8">
+          <div className="text-caption text-text-3" lang="en">
+            <code className="font-medium text-text">text-essay-title</code>
             <div className="tabular-nums">28px</div>
             <div>The essay prompt</div>
           </div>
@@ -57,9 +57,9 @@ export default function TypeSpecimen() {
             Le télétravail devrait-il devenir la norme&#8239;?
           </h3>
         </div>
-        <div className="grid gap-2 border-b border-current/10 py-6 sm:grid-cols-[180px_minmax(0,1fr)] sm:gap-8">
-          <div className="text-caption opacity-60" lang="en">
-            <code className="font-medium opacity-100">text-essay</code>
+        <div className="grid gap-2 border-b py-6 sm:grid-cols-[180px_minmax(0,1fr)] sm:gap-8">
+          <div className="text-caption text-text-3" lang="en">
+            <code className="font-medium text-text">text-essay</code>
             <div className="tabular-nums">17px → 19px</div>
             <div>Essay body, capped at 65ch</div>
           </div>
