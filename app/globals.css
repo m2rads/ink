@@ -1,4 +1,6 @@
 @import "tailwindcss";
+/* shadcn's data-open/data-closed variants. Not tw-animate-css: motion is ours. */
+@import "shadcn/tailwind.css";
 
 /*
  * Color. Gray-first, after Linear's marketing site: a near-black (never
@@ -26,14 +28,41 @@
   --text-2: oklch(0.38 0.014 257.85);
   --text-3: oklch(0.5 0.015 257.85); /* meta, placeholders */
 
-  --border: oklch(0.91 0.006 257.85); /* hairlines, decorative */
-  --border-strong: oklch(0.82 0.01 257.85); /* inputs, ghost buttons */
+  /* Alpha in light mode so hairlines recede into whatever surface they sit
+     on; solid in dark mode, where alpha white glows. */
+  --border: oklch(0.21 0.01 257.85 / 0.1); /* hairlines, decorative */
+  --border-strong: oklch(0.21 0.01 257.85 / 0.2); /* inputs, ghost buttons */
 
   /* Primary actions are an inverted gray fill, not brand blue. */
   --primary: var(--text);
   --primary-hover: oklch(0.33 0.012 257.85);
   --primary-fg: var(--bg);
-  --focus-ring: var(--text-3);
+  /* As dim as focus can be: just over 3:1 on every surface (3.29 here). */
+  --focus-ring: oklch(0.62 0.012 257.85);
+
+  /* Backdrop behind dialogs and drawers. */
+  --scrim: oklch(0.21 0.01 257.85 / 0.16);
+
+  /* Inverted in light mode; a lifted gray in dark, never the brightest
+     thing on a near-black page. */
+  --tooltip: oklch(0.21 0.01 257.85);
+  --tooltip-fg: oklch(0.98 0.002 257.85);
+
+  /*
+   * Elevation. Each level carries its own 1px edge, so raised things need no
+   * separate ring or border. Light: layered, low-opacity shadows that read
+   * as physical. Dark: shadows barely show, so the edge does the work.
+   */
+  --elevation-raised: 0 0 0 1px oklch(0.21 0.01 257.85 / 0.06),
+    0 1px 2px oklch(0.21 0.01 257.85 / 0.08);
+  --elevation-overlay: 0 0 0 1px oklch(0.21 0.01 257.85 / 0.08),
+    0 2px 4px oklch(0.21 0.01 257.85 / 0.04),
+    0 8px 16px oklch(0.21 0.01 257.85 / 0.06),
+    0 16px 32px oklch(0.21 0.01 257.85 / 0.06);
+  --elevation-modal: 0 0 0 1px oklch(0.21 0.01 257.85 / 0.08),
+    0 4px 8px oklch(0.21 0.01 257.85 / 0.04),
+    0 16px 32px oklch(0.21 0.01 257.85 / 0.08),
+    0 32px 64px oklch(0.21 0.01 257.85 / 0.12);
 
   --brand: oklch(0.515 0.182 257.85);
   --brand-hover: oklch(0.445 0.151 257.85);
@@ -67,6 +96,9 @@
   --color-primary-hover: var(--primary-hover);
   --color-primary-fg: var(--primary-fg);
   --color-focus-ring: var(--focus-ring);
+  --color-scrim: var(--scrim);
+  --color-tooltip: var(--tooltip);
+  --color-tooltip-fg: var(--tooltip-fg);
   --color-brand: var(--brand);
   --color-brand-hover: var(--brand-hover);
   --color-brand-fg: var(--brand-fg);
@@ -76,6 +108,13 @@
   --color-c-accord: var(--c-accord);
   --color-c-conj: var(--c-conj);
   --color-c-ortho: var(--c-ortho);
+
+  /* Only three elevations: raised (active tab), overlay (menus, popovers,
+     tooltips, toasts), modal (dialogs, drawers). */
+  --shadow-*: initial;
+  --shadow-raised: var(--elevation-raised);
+  --shadow-overlay: var(--elevation-overlay);
+  --shadow-modal: var(--elevation-modal);
 
   --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
   --font-serif: var(--font-literata), ui-serif, Georgia, serif;
@@ -159,6 +198,23 @@
 
     --primary-hover: oklch(0.88 0.008 257.85);
 
+    /* Just over 3:1 on every dark surface (3.34); --text-3 (0.78) glowed. */
+    --focus-ring: oklch(0.54 0.012 257.85);
+
+    /* Stronger than light's: a faint scrim disappears on a near-black page. */
+    --scrim: oklch(0 0 0 / 0.55);
+
+    --tooltip: oklch(0.3 0.008 257.85);
+    --tooltip-fg: oklch(0.98 0.002 257.85);
+
+    /* The edge sits between --border and --border-strong so it still shows
+       on --raised (0.23), where --border (0.27) nearly vanishes. */
+    --elevation-raised: 0 0 0 1px oklch(0.3 0.008 257.85);
+    --elevation-overlay: 0 0 0 1px oklch(0.32 0.01 257.85),
+      0 8px 24px oklch(0 0 0 / 0.5);
+    --elevation-modal: 0 0 0 1px oklch(0.32 0.01 257.85),
+      0 24px 64px oklch(0 0 0 / 0.6);
+
     /* Lighter on hover, but not as light as blue-500: white text there
        drops below 4.5:1. */
     --brand-hover: oklch(0.555 0.192 257.85);
@@ -188,6 +244,14 @@
 }
 
 @layer base {
+  /* Bare `border` classes (shadcn uses them) get a hairline, not currentColor. */
+  *,
+  ::before,
+  ::after,
+  ::backdrop {
+    border-color: var(--border);
+  }
+
   html {
     font-synthesis: none;
     -webkit-text-size-adjust: 100%;
