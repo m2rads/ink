@@ -3,6 +3,7 @@
 Sources: `components/ui/input.tsx`, `textarea.tsx`, `input-group.tsx`, `kbd.tsx`.
 
 ```
+The essay itself, or any long French answer to a prompt? → EssayEditor (app/write/essay-editor.tsx), never Textarea
 One line of text (email, a single word or phrase)? → Input
 Several lines (an answer, the fallback essay surface)? → Textarea
 Text with an icon, button or keyboard hint inside the field? → InputGroup

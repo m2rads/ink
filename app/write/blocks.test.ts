@@ -1,0 +1,132 @@
+import { describe, expect, test } from "bun:test";
+
+import {
+  blocksFromText,
+  blocksToText,
+  countWords,
+  insertText,
+  mergeWithNext,
+  mergeWithPrevious,
+  moveBlock,
+  splitBlock,
+  type Block,
+} from "./blocks";
+
+const doc = (...texts: string[]): Block[] => texts.map((text, i) => ({ id: `b${i}`, text }));
+const texts = (blocks: Block[]) => blocks.map((b) => b.text);
+
+describe("splitBlock", () => {
+  test("splits at the caret and puts the caret at the start of the new block", () => {
+    const edit = splitBlock(doc("Bonjour le monde"), "b0", 8, 8)!;
+    expect(texts(edit.blocks)).toEqual(["Bonjour ", "le monde"]);
+    expect(edit.caret).toEqual({ blockId: edit.blocks[1].id, offset: 0 });
+  });
+
+  test("deletes the selection before splitting", () => {
+    const edit = splitBlock(doc("Bonjour cher monde"), "b0", 8, 13)!;
+    expect(texts(edit.blocks)).toEqual(["Bonjour ", "monde"]);
+  });
+
+  test("keeps the original block's id for the first half", () => {
+    const edit = splitBlock(doc("ab"), "b0", 1, 1)!;
+    expect(edit.blocks[0].id).toBe("b0");
+  });
+
+  test("does nothing in an empty block", () => {
+    expect(splitBlock(doc("Un", ""), "b1", 0, 0)).toBeNull();
+  });
+});
+
+describe("merging", () => {
+  test("backspace at the start joins onto the previous block", () => {
+    const edit = mergeWithPrevious(doc("Premier.", " Second."), "b1")!;
+    expect(texts(edit.blocks)).toEqual(["Premier. Second."]);
+    expect(edit.caret).toEqual({ blockId: "b0", offset: 8 });
+  });
+
+  test("backspace in the first block does nothing", () => {
+    expect(mergeWithPrevious(doc("Seul"), "b0")).toBeNull();
+  });
+
+  test("delete at the end pulls the next block in", () => {
+    const edit = mergeWithNext(doc("Un", "Deux", "Trois"), "b0")!;
+    expect(texts(edit.blocks)).toEqual(["UnDeux", "Trois"]);
+    expect(edit.caret).toEqual({ blockId: "b0", offset: 2 });
+  });
+
+  test("delete in the last block does nothing", () => {
+    expect(mergeWithNext(doc("Un", "Deux"), "b1")).toBeNull();
+  });
+});
+
+describe("insertText", () => {
+  test("single line replaces the selection in place", () => {
+    const edit = insertText(doc("Il faut que tu viens."), "b0", 15, 20, "viennes");
+    expect(texts(edit.blocks)).toEqual(["Il faut que tu viennes."]);
+    expect(edit.caret.offset).toBe(22);
+  });
+
+  test("pasted paragraphs become blocks around the caret", () => {
+    const edit = insertText(doc("Avant|Après"), "b0", 6, 6, "un\n\ndeux\ntrois");
+    expect(texts(edit.blocks)).toEqual(["Avant|un", "deux", "troisAprès"]);
+    expect(edit.caret).toEqual({ blockId: edit.blocks[2].id, offset: 5 });
+  });
+
+  test("Windows line endings split like Unix ones", () => {
+    const edit = insertText(doc(""), "b0", 0, 0, "un\r\ndeux");
+    expect(texts(edit.blocks)).toEqual(["un", "deux"]);
+  });
+
+  test("composes accents to one character (NFC)", () => {
+    const edit = insertText(doc(""), "b0", 0, 0, "été");
+    expect(edit.blocks[0].text).toBe("été");
+    expect(edit.blocks[0].text.length).toBe(3);
+  });
+});
+
+describe("plain text", () => {
+  test("round-trips paragraphs and drops empty ones", () => {
+    const blocks = blocksFromText("Un.\n\n\nDeux.\n");
+    expect(texts(blocks)).toEqual(["Un.", "Deux."]);
+    expect(blocksToText([...blocks, { id: "x", text: "  " }])).toBe("Un.\n\nDeux.");
+  });
+
+  test("empty text still gives one block to type in", () => {
+    expect(texts(blocksFromText(""))).toEqual([""]);
+  });
+});
+
+describe("countWords", () => {
+  test("counts tokens with a letter, like the prototype", () => {
+    expect(countWords(doc("Je ne suis pas d’accord – vraiment ?", "Oui."))).toBe(7);
+  });
+
+  test("is zero for an empty essay", () => {
+    expect(countWords(doc("", "   "))).toBe(0);
+  });
+});
+
+describe("moveBlock", () => {
+  const four = doc("Un", "Deux", "Trois", "Quatre");
+
+  test("moves down and up by one", () => {
+    expect(texts(moveBlock(four, "b0", 1))).toEqual(["Deux", "Un", "Trois", "Quatre"]);
+    expect(texts(moveBlock(four, "b2", 1))).toEqual(["Un", "Trois", "Deux", "Quatre"]);
+  });
+
+  test("moves to the ends", () => {
+    expect(texts(moveBlock(four, "b1", 3))).toEqual(["Un", "Trois", "Quatre", "Deux"]);
+    expect(texts(moveBlock(four, "b3", 0))).toEqual(["Quatre", "Un", "Deux", "Trois"]);
+  });
+
+  test("clamps past either end and keeps ids and text", () => {
+    const moved = moveBlock(four, "b0", 99);
+    expect(texts(moved)).toEqual(["Deux", "Trois", "Quatre", "Un"]);
+    expect(moved[3]).toBe(four[0]);
+    expect(texts(moveBlock(four, "b2", -5))).toEqual(["Trois", "Un", "Deux", "Quatre"]);
+  });
+
+  test("returns the same array when the block stays put", () => {
+    expect(moveBlock(four, "b2", 2)).toBe(four);
+  });
+});

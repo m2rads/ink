@@ -20,6 +20,10 @@ Is it a color, background or border change on hover/press/focus?
 | Dialogs and their scrim | 200ms (same for both) | 150ms | `ease-out` in, `ease-in` out |
 | Drawers and their scrim | 300ms | 250ms | `ease-drawer` |
 | Tab indicator | 200ms | — | `ease-in-out` |
+| Paragraph drag: lifted card fades in | 150ms | 150ms | default |
+| Paragraph drag: neighbors slide aside | 200ms | — | `ease-in-out` |
+| Paragraph drop: settles into its slot | 150ms | — | `ease-out` |
+| Paragraph moved by keyboard or menu | 200ms (both swap, FLIP) | — | `ease-in-out` |
 | Button press | 150ms to `scale-[0.96]` | 150ms | `ease-out` |
 
 Rules:

@@ -40,6 +40,10 @@ Reference: `docs/prototypes/correction-loop.html`. Open it in a browser; `?v=3` 
 - Whether a tired learner finishes the correction loop or skips to the answer.
 - Whether AI score estimates track real TEF results.
 
+## Rendering
+
+`cacheComponents` is on in `next.config.ts`, so every page prerenders a static shell. Read request-time data (`searchParams`, `params` without `generateStaticParams`, `cookies()`, `headers()`) inside a `<Suspense>` boundary with a skeleton fallback, never at the top of a page: outside Suspense it blocks the whole route (the dev overlay reports "Next.js encountered runtime data during prerendering"). See `app/write/page.tsx`. Browser-only state (localStorage drafts, the exam clock) goes through `createLocalStore` in `app/write/local-store.ts`, which renders `null` on the server and the stored value after hydration.
+
 ## Design system
 
 We are building our own design system, held to shadcn's standard. **Before writing any UI, read [DESIGN.md](DESIGN.md)** and the topic file it points to: tokens, the closed variant sets of every component, and which component to use when. This section covers how components get built; DESIGN.md covers how to use them. shadcn is allowed as a source of code, not as a look: it copies component source into `components/ui/`, which we own and restyle. No other styled component library.
@@ -52,6 +56,7 @@ We are building our own design system, held to shadcn's standard. **Before writi
 - **Native for product components**, the ones that are Ink: essay editor, prompt card, timer, word count, lookup panel (on Command), app bar, the correction compound (`<Correction>`, `Correction.Filters`, `Correction.Paragraph`, Mark, FixInput, `Correction.Notes`/Note, Feedback), category tag, correction summary, essay history row, category trend bars, empty states.
 - **Build order:** tokens, motion pass and `DESIGN.md` are done → the native components Margin needs (Mark, FixInput, Note, Feedback). When a component, variant or token changes, update its file in `docs/design/` in the same change.
 - **Component APIs:** composition over configuration; compound components sharing state through context (e.g. `<Correction>`, `Correction.Filters`, `Correction.Row`, `Correction.Paragraph`, `Correction.Notes`); `variant`/`size` plus a `className` for layout only (DESIGN.md rule 2); forward refs; spread remaining props; support controlled and uncontrolled state (`activeId`/`defaultActiveId`/`onActiveIdChange`).
-- **The correction view is not a rich-text editor:** read-only text with inline inputs, no `contenteditable`. The editor engine for the writing screen is a separate, undecided choice.
+- **The correction view is not a rich-text editor:** read-only text with inline inputs, no `contenteditable`.
+- **The writing screen uses our own block editor** (`app/write/`), never a third-party rich-text editor (TipTap, Lexical, ProseMirror, Slate…) and never `contenteditable`. One auto-growing `<textarea>` per paragraph, so the browser handles typing, accents and IME; the editor handles what crosses paragraphs (Enter, Backspace/Delete at the edges, ↑/↓/←/→, paste, reordering by drag, menu or ⌘⇧↑/↓) and owns undo. Drag uses pointer events with pointer capture, not HTML5 drag-and-drop. (Sentence reordering in the correction view is still parked.) Paragraphs are the unit the correction view highlights, so the model stays `{ id, text }[]` plain text. Block edits are pure functions in `blocks.ts` with tests (`bun test`); add a test with every new edit.
 - **No shared component** until the code has been copy-pasted 2–3 times. shadcn primitives in `components/ui/` are the exception, added when a screen first needs one.
 - **Skills to use:** `emil-design-foundations`, `emil-color`, `emil-typography`, `emil-component-design`, `emil-animations`, `emil-design-system-docs`.
