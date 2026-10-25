@@ -24,7 +24,9 @@
   --sunken: oklch(0.965 0.003 257.85); /* chips, tracks, hover fills */
   --raised: oklch(1 0 0); /* tooltips, popovers; pair with --border */
 
-  --text: oklch(0.21 0.01 257.85);
+  /* Body text one step off the darkest gray (14.4:1 on --bg, from 17.5),
+     so the page reads softer without losing contrast. */
+  --text: oklch(0.28 0.012 257.85);
   --text-2: oklch(0.38 0.014 257.85);
   --text-3: oklch(0.5 0.015 257.85); /* meta, placeholders */
 
@@ -219,16 +221,19 @@
     --sunken: oklch(0.19 0.004 257.85);
     --raised: oklch(0.23 0.005 257.85);
 
-    --text: oklch(0.98 0.002 257.85);
-    --text-2: oklch(0.87 0.014 257.85);
-    --text-3: oklch(0.78 0.015 257.85);
+    /* One step off white (16:1 on --bg, from 19.7): pure white on near
+       black glares. The lower steps move with it to keep their spacing;
+       --text-3 is still 6.3:1 on --raised. */
+    --text: oklch(0.91 0.004 257.85);
+    --text-2: oklch(0.8 0.012 257.85);
+    --text-3: oklch(0.7 0.013 257.85);
 
     --border: oklch(0.27 0.008 257.85);
     --border-strong: oklch(0.37 0.01 257.85);
 
-    --primary-hover: oklch(0.88 0.008 257.85);
+    --primary-hover: oklch(0.85 0.008 257.85);
 
-    /* Just over 3:1 on every dark surface (3.34); --text-3 (0.78) glowed. */
+    /* Just over 3:1 on every dark surface (3.34); a ring as light as the text grays glowed. */
     --focus-ring: oklch(0.54 0.012 257.85);
 
     /* Stronger than light's: a faint scrim disappears on a near-black page. */
