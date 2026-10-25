@@ -137,6 +137,12 @@
   --text-caption--line-height: 1.4;
   --text-caption--letter-spacing: 0.01em;
 
+  /* Mistake numbers raised beside essay text, as superscripts: relative to
+     the essay's size. Below the caption floor because they're decorative;
+     each note repeats its number. */
+  --text-sup: 0.55em;
+  --text-sup--line-height: 1;
+
   /* Chips, note headers, meta in the app bar. */
   --text-label: 0.8125rem;
   --text-label--line-height: 1.4;

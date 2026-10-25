@@ -8,6 +8,7 @@ export const cn = createCn({
       "font-size": [
         {
           text: [
+            "sup",
             "caption",
             "label",
             "ui",

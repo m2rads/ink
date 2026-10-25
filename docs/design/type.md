@@ -6,7 +6,8 @@ Inter (`font-sans`, the default) for the interface; Literata (`font-serif`) for 
 
 | Class | Size | Use |
 | --- | --- | --- |
-| `text-caption` | 12px | Counts, timestamps, keyboard hints. The floor: nothing smaller. |
+| `text-caption` | 12px | Counts, timestamps, keyboard hints. The floor: nothing smaller, except `text-sup`. |
+| `text-sup` | 0.55em of the essay (9–10px) | Mistake numbers raised beside marked phrases, and nothing else. Decorative: each note repeats its number, and the mark's label carries it. |
 | `text-label` | 13px | Chips, note headers, app bar meta, form labels. |
 | `text-ui` | 14px | Buttons, note explanations, menu items, dense controls. |
 | `text-body` | 16px | Default interface text and every input (16px stops iOS zooming). |

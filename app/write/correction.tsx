@@ -601,8 +601,8 @@ function Mark({ mistake: m }: { mistake: CorrectionMistake }) {
       }}
       aria-label={`${CATEGORY_LABEL[m.category]} mistake ${m.number}: ${m.wrong}${m.status === "skipped" ? ", skipped" : ""}`}
       // Same metrics as plain text, so marking a phrase moves no words: the
-      // padding is cancelled by an equal negative margin, and the number
-      // floats above the phrase's start instead of taking width in the line.
+      // padding is cancelled by an equal negative margin, and the number is a
+      // superscript that takes no width: raised past the phrase's last letter.
       className={cn(
         // ::before stretches the hit area to the full line height; any taller
         // and marks on neighboring lines would overlap. On phones the note
@@ -614,7 +614,7 @@ function Mark({ mistake: m }: { mistake: CorrectionMistake }) {
     >
       <span
         className={cn(
-          "pointer-events-none absolute -top-2.5 left-0 font-sans text-caption leading-none font-semibold tabular-nums select-none",
+          "pointer-events-none absolute -right-0.5 bottom-4 font-sans text-sup font-medium tabular-nums select-none",
           tone.text,
         )}
         aria-hidden
