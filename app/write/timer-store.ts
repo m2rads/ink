@@ -3,7 +3,7 @@
 import { useSyncExternalStore } from "react";
 
 import { createLocalStore } from "@/lib/local-store";
-import { IDLE, parseTimer, pause, resume, start, type TimerState } from "./timer";
+import { end, IDLE, parseTimer, pause, resume, start, type TimerState } from "./timer";
 
 // The run's timer, saved the moment it changes: a mock run's clock must keep
 // running from its real start time if the page is closed and reopened.
@@ -22,6 +22,7 @@ export const useTimerState = timers.useValue;
 export const startTimer = (id: string) => timers.write(id, start(timers.read(id), Date.now()));
 export const pauseTimer = (id: string) => timers.write(id, pause(timers.read(id), Date.now()));
 export const resumeTimer = (id: string) => timers.write(id, resume(timers.read(id), Date.now()));
+export const endTimer = (id: string) => timers.write(id, end(timers.read(id), Date.now()));
 
 // One shared clock for every subscriber, ticking just after each second
 // boundary so the display changes in step with real seconds.

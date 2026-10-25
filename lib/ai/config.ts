@@ -2,8 +2,8 @@ import { get } from "@vercel/edge-config";
 import { z } from "zod";
 
 // Which model runs each AI task, read on every request so an A/B split can
-// change without a build. Models are AI Gateway ids ("anthropic/claude-sonnet-5.5"),
-// so trying a new provider is a config change, not a new package.
+// change without a build. Models are AI Gateway ids ("openai/gpt-6-sol"), so
+// trying a new provider is a config change, not a new package.
 //
 // Where the config comes from, first match wins:
 //   1. Edge Config, key "ai", when EDGE_CONFIG is set. Edits reach running
@@ -13,13 +13,13 @@ import { z } from "zod";
 //   3. DEFAULT_CONFIG below.
 //
 // {
-//   "check": [{ "id": "sonnet", "model": "anthropic/claude-sonnet-5.5", "weight": 50 },
-//             { "id": "gpt", "model": "openai/gpt-5.5", "weight": 50 }],
-//   "fix":   [{ "id": "haiku", "model": "anthropic/claude-haiku-5.5" }]
+//   "check": [{ "id": "sol", "model": "openai/gpt-6-sol", "reasoning": "medium", "weight": 50 },
+//             { "id": "sonnet", "model": "anthropic/claude-sonnet-5.5", "reasoning": "medium", "weight": 50 }],
+//   "fix":   [{ "id": "sol-low", "model": "openai/gpt-6-sol", "reasoning": "low" }]
 // }
 //
-// Each essay lands in one arm per task and stays there (see pickArm), so its
-// check and every re-check of its fixes come from the same model.
+// Each review lands in one arm per task and stays there (see pickArm), so
+// every re-check of its fixes comes from the same arm.
 
 export type Task = "check" | "fix";
 
@@ -29,6 +29,8 @@ const armSchema = z.object({
   model: z.string().regex(/^[\w.-]+\/[\w.:-]+$/, "an AI Gateway id like provider/model"),
   /** Relative share of traffic; arms don't need to add up to 100. 0 pauses an arm. */
   weight: z.number().min(0).default(1),
+  /** The AI SDK's portable reasoning effort; omitted means the provider's default. */
+  reasoning: z.enum(["none", "minimal", "low", "medium", "high", "xhigh", "max"]).optional(),
 });
 
 const configSchema = z.object({
@@ -40,8 +42,9 @@ export type Arm = z.infer<typeof armSchema>;
 export type AiConfig = z.infer<typeof configSchema>;
 
 export const DEFAULT_CONFIG: AiConfig = {
-  check: [{ id: "sonnet-5.5", model: "anthropic/claude-sonnet-5.5", weight: 1 }],
-  fix: [{ id: "haiku-5.5", model: "anthropic/claude-haiku-5.5", weight: 1 }],
+  check: [{ id: "sol-medium", model: "openai/gpt-6-sol", reasoning: "medium", weight: 1 }],
+  // A fix is one short judgment the learner waits on, so less reasoning.
+  fix: [{ id: "sol-low", model: "openai/gpt-6-sol", reasoning: "low", weight: 1 }],
 };
 
 export async function loadConfig(): Promise<AiConfig> {
@@ -72,7 +75,7 @@ export function parseConfig(value: unknown, source: string): AiConfig {
 }
 
 /**
- * The arm for one unit (an essay id), weighted and deterministic: the same
+ * The arm for one unit (a review id), weighted and deterministic: the same
  * unit gets the same arm until the arms or weights change.
  */
 export function pickArm(arms: Arm[], unit: string, task: Task): Arm {

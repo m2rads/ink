@@ -298,6 +298,18 @@
     border-color: var(--border);
   }
 
+  /* A quick second tap on a control is a second press, not a zoom.
+     Custom gesture surfaces (the paragraph grip) set touch-none instead. */
+  a,
+  button,
+  input,
+  textarea,
+  select,
+  label,
+  [role="button"] {
+    touch-action: manipulation;
+  }
+
   html {
     font-synthesis: none;
     -webkit-text-size-adjust: 100%;

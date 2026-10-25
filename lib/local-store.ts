@@ -74,6 +74,19 @@ export function createLocalStore<T>({ prefix, parse, serialize, fallback, saveDe
     };
   }
 
+  /** Forget `id`: drop it from storage, and subscribers get the fallback. */
+  function remove(id: string) {
+    clearTimeout(pending.get(id));
+    pending.delete(id);
+    cache.delete(id);
+    try {
+      localStorage.removeItem(keyOf(id));
+    } catch {
+      // Storage blocked: nothing was saved there either.
+    }
+    listeners.get(id)?.forEach((l) => l());
+  }
+
   /** The stored value for `id`, or `null` until the client has hydrated. */
   function useValue(id: string): [T | null, (next: T) => void] {
     const value = useSyncExternalStore(
@@ -85,7 +98,7 @@ export function createLocalStore<T>({ prefix, parse, serialize, fallback, saveDe
     return [value, set];
   }
 
-  return { useValue, read, write };
+  return { useValue, read, write, remove };
 }
 
 function safeGet(key: string): string | null {

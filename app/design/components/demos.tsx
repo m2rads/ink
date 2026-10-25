@@ -63,7 +63,6 @@ import {
 import { Progress, ProgressLabel, ProgressValue } from "@/components/ui/progress";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Toaster } from "@/components/ui/sonner";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
@@ -79,7 +78,6 @@ export function DemoProviders({ children }: { children: React.ReactNode }) {
   return (
     <TooltipProvider>
       {children}
-      <Toaster />
     </TooltipProvider>
   );
 }

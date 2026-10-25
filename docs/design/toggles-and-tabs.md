@@ -22,7 +22,7 @@ Props that change the look: `variant` (`default`, `outline`), `size` (`default`,
 
 - `variant="outline"`: the default for filter chips. Unpressed chips are outlined with `text-text-2`; pressed ones fill with `bg-sunken`, so state reads without color.
 - `variant="default"`: toolbars of formatting-style toggles, where outlines would be noise.
-- Sizes: `default` 32px, `sm` 28px, `lg` 36px. Chips beside 36px buttons use `lg`; inside notes use `sm`.
+- Sizes: `default` 32px, `sm` 28px, `lg` 36px. Chips beside 36px buttons use `lg`; inside notes use `sm`. On touch screens every size's hit area grows to 44px (vertically only in a joined, `spacing={0}` group); with `spacing={2}`, only `lg` chips stay clear of each other, so use `lg` for touch-heavy filters.
 - `spacing={2}` (default) separates chips; `spacing={0}` joins them into one segmented pill.
 
 Always pass `multiple` for filters and an `aria-label` describing what is filtered. A category chip carries a dot in its category color (`bg-c-prep`…), never a colored chip background, so the four categories stay equally loud.

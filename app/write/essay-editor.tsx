@@ -95,6 +95,12 @@ type EssayEditorProps = Omit<React.ComponentProps<"div">, "defaultValue" | "onCh
   autoFocus?: boolean;
   /** Locks the text and its order (time's up, paused). The caret can still move and select. */
   readOnly?: boolean;
+  /**
+   * ↑ on the first line or ← at the very start of the first paragraph: move
+   * focus to whatever sits above the essay (the title). `x` is the caret's
+   * horizontal position for ↑, so the caret can land under it; null for ←.
+   */
+  onExitTop?: (x: number | null) => void;
 };
 
 export function EssayEditor({
@@ -104,6 +110,7 @@ export function EssayEditor({
   placeholder,
   autoFocus = false,
   readOnly = false,
+  onExitTop,
   lang = "fr",
   className,
   ...props
@@ -123,6 +130,12 @@ export function EssayEditor({
   const [drag, setDrag] = useState<Drag | null>(null);
   const [menuFor, setMenuFor] = useState<string | null>(null);
   const [announcement, setAnnouncement] = useState("");
+  // The paragraph with focus now (shows its handle on touch screens), and the
+  // last one that had it: the essay's single Tab stop, so Tab enters and
+  // leaves the essay in one press and arrows move between paragraphs.
+  const [focusedId, setFocusedId] = useState<string | null>(null);
+  const [tabStopId, setTabStopId] = useState<string | null>(null);
+  const tabStop = blocks.some((b) => b.id === tabStopId) ? tabStopId : blocks[0]?.id;
 
   function commit(next: Block[], caret: Caret | null) {
     pendingCaret.current = caret;
@@ -334,7 +347,14 @@ export function EssayEditor({
         return;
 
       case "ArrowUp":
-        if (collapsed && !e.shiftKey && !mod && !e.altKey && prev && isOnFirstLine(el, start)) {
+        if (collapsed && !e.shiftKey && !mod && !e.altKey && isOnFirstLine(el, start)) {
+          if (!prev) {
+            if (onExitTop) {
+              e.preventDefault();
+              onExitTop(caretX(el, start));
+            }
+            return;
+          }
           e.preventDefault();
           const target = textareas.current.get(prev.id);
           if (target) focusAt({ blockId: prev.id, offset: offsetAtX(target, caretX(el, start), "last") });
@@ -350,7 +370,14 @@ export function EssayEditor({
         return;
 
       case "ArrowLeft":
-        if (collapsed && !e.shiftKey && !mod && start === 0 && prev) {
+        if (collapsed && !e.shiftKey && !mod && start === 0) {
+          if (!prev) {
+            if (onExitTop) {
+              e.preventDefault();
+              onExitTop(null);
+            }
+            return;
+          }
           e.preventDefault();
           focusAt({ blockId: prev.id, offset: prev.text.length });
         }
@@ -526,6 +553,7 @@ export function EssayEditor({
               count={blocks.length}
               keys={keys}
               dragging={drag?.id === block.id}
+              focused={focusedId === block.id}
               menuOpen={menuFor === block.id}
               onMenuOpenChange={(open) => setMenuFor(open ? block.id : null)}
               onPointerDown={(e) => onHandlePointerDown(block, index, e)}
@@ -544,6 +572,12 @@ export function EssayEditor({
             value={block.text}
             rows={1}
             readOnly={readOnly}
+            tabIndex={block.id === tabStop ? 0 : -1}
+            onFocus={() => {
+              setFocusedId(block.id);
+              setTabStopId(block.id);
+            }}
+            onBlur={() => setFocusedId((id) => (id === block.id ? null : id))}
             aria-label={`Paragraph ${index + 1} of ${blocks.length}`}
             aria-keyshortcuts={canReorder ? "Meta+Shift+ArrowUp Meta+Shift+ArrowDown Control+Shift+ArrowUp Control+Shift+ArrowDown" : undefined}
             placeholder={showPlaceholder ? placeholder : undefined}
@@ -565,14 +599,18 @@ export function EssayEditor({
   );
 }
 
-// The grip in the left margin: drag it to move the paragraph, or click it for
-// Move up / Move down (the single-pointer alternative to dragging). Fine
-// pointers on wide screens only; everywhere, ⌘⇧↑/↓ also moves a paragraph.
+// The grip that moves a paragraph: drag it, or tap/click it for Move up /
+// Move down (the single-pointer alternative to dragging); ⌘⇧↑/↓ works too.
+// With a mouse it sits in the left margin and shows on hovering the paragraph
+// (wide screens only). On touch screens only the focused paragraph has one,
+// so no invisible handle catches a tap: in the left margin on tablets, and in
+// the gap above the paragraph, at the right, on phones, which have no margin.
 function BlockHandle({
   index,
   count,
   keys,
   dragging,
+  focused,
   menuOpen,
   onMenuOpenChange,
   onPointerDown,
@@ -583,6 +621,7 @@ function BlockHandle({
   count: number;
   keys: { mod: string; shift: string };
   dragging: boolean;
+  focused: boolean;
   menuOpen: boolean;
   onMenuOpenChange: (open: boolean) => void;
   onPointerDown: (e: React.PointerEvent<HTMLButtonElement>) => void;
@@ -594,7 +633,12 @@ function BlockHandle({
     // pointer travels to it. Vertically centered on the first line.
     <div
       data-visible={dragging || menuOpen ? "" : undefined}
-      className="absolute top-[calc((1lh-1.75rem)/2)] right-full pr-2 opacity-0 transition-opacity duration-150 group-hover/block:opacity-100 data-visible:opacity-100 max-sm:hidden pointer-coarse:hidden"
+      data-focused={focused ? "" : undefined}
+      className={cn(
+        "absolute top-[calc((1lh-1.75rem)/2)] right-full pr-2 opacity-0 transition-opacity duration-150 group-hover/block:opacity-100 data-visible:opacity-100 pointer-fine:max-sm:hidden",
+        "pointer-coarse:invisible pointer-coarse:data-focused:visible pointer-coarse:data-focused:opacity-100 pointer-coarse:data-visible:visible",
+        "pointer-coarse:max-sm:top-auto pointer-coarse:max-sm:right-0 pointer-coarse:max-sm:bottom-full pointer-coarse:max-sm:pr-0",
+      )}
     >
       <DropdownMenu open={menuOpen} onOpenChange={onMenuOpenChange}>
         <Tooltip>
@@ -610,7 +654,8 @@ function BlockHandle({
                     onPointerDown={onPointerDown}
                     // Opening is decided on release (click vs drag), not on press.
                     onMouseDown={(e: BaseUIEvent<React.MouseEvent>) => e.preventBaseUIHandler()}
-                    className="cursor-grab active:cursor-grabbing"
+                    // Its own gesture: a touch drag moves the paragraph, not the page.
+                    className="cursor-grab touch-none active:cursor-grabbing"
                   />
                 }
               />

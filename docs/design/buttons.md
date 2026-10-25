@@ -74,7 +74,7 @@ Icon-only buttons always have `aria-label` and are wrapped in a Tooltip with the
 
 ## Look and states are built in
 
-Buttons are pills (`rounded-full`); icon sizes are circles. Hover, press (scales to 96%), focus outline and disabled (`disabled:bg-sunken`, `text-text-3`) are all in `buttonVariants`. Never add `rounded-*`, `shadow-*`, `bg-*`, `text-*`, `h-*`, `px-*`, `opacity-*` or a custom `active:` style to a Button. Use `disabled`, never `opacity-50`. Icons come from `lucide-react` only; size them with the button's `size`, not `size-*` on the icon.
+Buttons are pills (`rounded-full`); icon sizes are circles. Hover, press (scales to 96%), focus outline and disabled (`disabled:bg-sunken`, `text-text-3`) are all in `buttonVariants`. Every size has a 40px hit area, 44px on touch screens: a transparent `::before` bleeds past the pill (beyond the border: 2px for `default`, 4px for `sm`, 6px for `xs`; on touch 4, 6 and 8px). Keep at least that bleed doubled between neighbors (`gap-2` for `sm`, `gap-3` for `xs`, and `pointer-coarse:gap-3` for `sm` on touch) so hit areas never overlap, and don't put your own `before:` on a Button. Controls get `touch-action: manipulation` globally (no double-tap zoom); a custom gesture surface sets `touch-none`. Never add `rounded-*`, `shadow-*`, `bg-*`, `text-*`, `h-*`, `px-*`, `opacity-*` or a custom `active:` style to a Button. Use `disabled`, never `opacity-50`. Icons come from `lucide-react` only; size them with the button's `size`, not `size-*` on the icon.
 
 ## Triggers
 

@@ -1,29 +1,67 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useLayoutEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import { AppBar, AppBarSkeleton } from "@/components/app-bar";
+import { Button } from "@/components/ui/button";
+import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
-import { essayTitle, updateEssay, useEssays } from "@/lib/essays";
+import { essayTitle, hasWriting, isSaved, removeEssay, saveEssay, useEssays } from "@/lib/essays";
+import { cn } from "@/lib/utils";
 
 import { countWords, type Block } from "./blocks";
-import { useDraft } from "./draft-store";
+import { caretX, isOnLastLine, offsetAtX } from "./caret";
+import { removeDraft, useDraft } from "./draft-store";
 import { EssayEditor } from "./essay-editor";
+import { ReviewProgress, ReviewView, useReviewFlow, useReviewProgress, useViewMode, type ViewMode } from "./review";
 
 // The user's own essay: a title (their prompt, or any name) and the text.
-// No exam framing; an empty title and body are the empty state.
+// No exam framing; an empty title and body are the empty state. Review, in
+// the app bar, swaps the editor for the correction view and back.
+//
+// Nothing is saved until something is written (lib/essays.ts): a new essay
+// (`fresh`, from New essay) opens on an id the list doesn't have yet.
 
 const BODY_ID = "essay-body";
+const TITLE_ID = "essay-title";
 
-export function EssayScreen({ id }: { id: string }) {
+export function EssayScreen({
+  id,
+  view = "write",
+  fresh = false,
+}: {
+  id: string;
+  view?: ViewMode;
+  /** Opened from New essay: an unknown id is a blank page, not a missing essay. */
+  fresh?: boolean;
+}) {
   const essays = useEssays();
   const [blocks, setBlocks] = useDraft(id);
   const essay = essays?.find((e) => e.id === id);
+  // Once open, the page stays editable even while clearing it unsaves the essay.
+  const [editable, setEditable] = useState(fresh);
+  if (essay && !editable) setEditable(true);
+
+  // An unsaved essay leaves no draft behind: on leaving the page in the app
+  // (unmount), and on reload or close, which skip unmounting.
+  useEffect(() => {
+    const discard = () => {
+      if (!isSaved(id)) removeDraft(id);
+    };
+    window.addEventListener("pagehide", discard);
+    return () => {
+      window.removeEventListener("pagehide", discard);
+      discard();
+    };
+  }, [id]);
+  const flow = useReviewFlow(id, blocks, essay?.title ?? "", { onFailed: () => setMode("write"), onRetry: review });
+  const [mode, setMode] = useViewMode(view, flow, blocks);
+  const progress = useReviewProgress(flow, blocks);
 
   if (essays === null || blocks === null) return <ScreenSkeleton />;
 
-  if (!essay) {
+  if (!essay && !editable) {
     return (
       <main className="mx-auto grid max-w-prose gap-2 px-4 pt-24 text-center">
         <h1 className="text-title">This essay isn’t on this device</h1>
@@ -37,53 +75,124 @@ export function EssayScreen({ id }: { id: string }) {
     );
   }
 
-  const isNew = essay.title === "" && essay.words === 0;
+  const title = essay?.title ?? "";
+  const words = essay?.words ?? 0;
+  const isNew = !hasWriting({ title, words });
+
+  // Saved as soon as something is written; cleared back to nothing, it's unsaved again.
+  function record(next: { title: string; words: number }) {
+    if (hasWriting(next)) saveEssay(id, next);
+    else removeEssay(id);
+  }
 
   function onBodyChange(next: Block[]) {
     setBlocks(next);
-    updateEssay(id, { words: countWords(next) });
+    record({ title, words: countWords(next) });
+  }
+
+  function review() {
+    flow.open();
+    setMode("review");
+    window.scrollTo({ top: 0 });
   }
 
   return (
     <>
       <AppBar>
-        <p className="min-w-0 truncate text-label text-text-3">
-          <Link href="/home" className="transition-colors hover:text-text">
+        {/* py-3.5 gives Home's hit area room to reach 44px tall inside the
+            truncating line, which clips anything outside its box. */}
+        <p className="min-w-0 truncate py-3.5 text-label text-text-3">
+          <Link
+            href="/home"
+            className="relative transition-colors before:absolute before:-inset-y-3.5 before:-right-2 before:left-0 hover:text-text"
+          >
             Home
           </Link>{" "}
           <span aria-hidden>/</span>{" "}
           <span className="text-text" lang="fr">
-            {essayTitle(essay)}
+            {essayTitle({ title })}
           </span>
         </p>
-        <span className="shrink-0 text-label text-text-3">
-          {essay.words.toLocaleString("en")} {essay.words === 1 ? "word" : "words"}
-        </span>
+        <div className="flex shrink-0 items-center gap-3">
+          <div className="flex h-4 items-center gap-3 text-label text-text-3">
+            {mode === "review" && progress && (
+              <>
+                <ReviewProgress {...progress} />
+                <Separator orientation="vertical" className="max-sm:hidden" />
+              </>
+            )}
+            <span className={cn(mode === "review" && "max-sm:hidden")}>
+              {words.toLocaleString("en")} {words === 1 ? "word" : "words"}
+            </span>
+          </div>
+          {mode === "write" ? (
+            <Button variant="outline" size="sm" onClick={review} disabled={words === 0}>
+              Review
+            </Button>
+          ) : (
+            <Button variant="outline" size="sm" onClick={() => setMode("write")}>
+              Edit essay
+            </Button>
+          )}
+        </div>
       </AppBar>
 
-      <main className="mx-auto w-full max-w-3xl px-4 sm:px-10">
-        <TitleField
-          value={essay.title}
-          autoFocus={isNew}
-          onChange={(title) => updateEssay(id, { title })}
-        />
+      {mode === "review" ? (
+        // The same column and spacing as the editor below, so the text doesn't move.
+        <main className="mx-auto w-full max-w-3xl px-4 pb-40 sm:px-10">
+          <ReviewView
+            draftId={id}
+            flow={flow}
+            blocks={blocks}
+            onBlocksChange={onBodyChange}
+            heading={
+              <h1
+                lang="fr"
+                className={cn(
+                  "mt-9 mb-6 block w-full max-w-prose py-1 font-serif text-essay-title text-wrap",
+                  !title.trim() && "text-text-3",
+                )}
+              >
+                {essayTitle({ title })}
+              </h1>
+            }
+          />
+        </main>
+      ) : (
+        <main className="mx-auto w-full max-w-3xl px-4 sm:px-10">
+          <TitleField
+            value={title}
+            autoFocus={isNew}
+            onChange={(next) => record({ title: next, words })}
+          />
 
-        <EssayEditor
-          id={BODY_ID}
-          value={blocks}
-          onValueChange={onBodyChange}
-          aria-label="Your essay"
-          placeholder="Écrivez votre texte ici…"
-          autoFocus={!isNew}
-          className="mt-6 max-w-prose min-h-96 pb-40"
-        />
-      </main>
+          <EssayEditor
+            id={BODY_ID}
+            value={blocks}
+            onValueChange={onBodyChange}
+            aria-label="Your essay"
+            placeholder="Écrivez votre texte ici…"
+            autoFocus={!isNew}
+            onExitTop={focusTitle}
+            className="mt-6 max-w-prose min-h-96 pb-40"
+          />
+        </main>
+      )}
     </>
   );
 }
 
-// One line of title that wraps as it grows. Enter or ↓ at the end moves into
-// the essay; pasted line breaks become spaces. Literata's descenders and
+/** Arrows out of the essay's top: ↑ lands under the caret on the title's last line, ← at its end. */
+function focusTitle(x: number | null) {
+  const el = document.getElementById(TITLE_ID);
+  if (!(el instanceof HTMLTextAreaElement)) return;
+  const offset = x === null ? el.value.length : offsetAtX(el, x, "last");
+  el.focus();
+  el.setSelectionRange(offset, offset);
+}
+
+// One line of title that wraps as it grows. Enter, ↓ on its last line or → at
+// its end moves into the essay (↓ keeps the caret's horizontal place); pasted line breaks become spaces. Literata's descenders and
 // accents reach past the 1.2 line-height, so py-1 gives them room inside the
 // box (mt-9 instead of mt-10 keeps the text where it was) and nothing scrolls
 // or clips.
@@ -113,15 +222,18 @@ function TitleField({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  function focusBody() {
+  function focusBody(x?: number) {
     const first = document.getElementById(BODY_ID)?.querySelector("textarea");
-    first?.focus();
-    first?.setSelectionRange(0, 0);
+    if (!first) return;
+    const offset = x === undefined ? 0 : offsetAtX(first, x, "first");
+    first.focus();
+    first.setSelectionRange(offset, offset);
   }
 
   return (
     <textarea
       ref={ref}
+      id={TITLE_ID}
       value={value}
       rows={1}
       lang="fr"
@@ -136,8 +248,16 @@ function TitleField({
       onChange={(e) => onChange(e.target.value.replace(/\s*\n\s*/g, " "))}
       onKeyDown={(e) => {
         const el = e.currentTarget;
-        const atEnd = el.selectionStart === el.value.length && el.selectionEnd === el.value.length;
-        if (e.key === "Enter" || (e.key === "ArrowDown" && atEnd)) {
+        const start = el.selectionStart;
+        const collapsed = start === el.selectionEnd;
+        const plain = !e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey;
+        if (e.key === "Enter") {
+          e.preventDefault();
+          focusBody();
+        } else if (e.key === "ArrowDown" && plain && collapsed && isOnLastLine(el, start)) {
+          e.preventDefault();
+          focusBody(caretX(el, start));
+        } else if (e.key === "ArrowRight" && plain && collapsed && start === el.value.length) {
           e.preventDefault();
           focusBody();
         }

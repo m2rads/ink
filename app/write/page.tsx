@@ -33,7 +33,8 @@ const PROMPTS: Record<Prompt["section"], Omit<Prompt, "run">> = {
   },
 };
 
-// /write?essay=<id> opens one of the user's essays (from /home). The sample
+// /write?essay=<id> opens one of the user's essays (from /home); &new=1 is a
+// new essay that isn't saved until something is written. The sample
 // exam runs stay at /write?section=A&run=mock until runs get their own entry.
 // Search params are request-time data, so they're read inside Suspense: the
 // skeleton prerenders as the static shell and the run streams in.
@@ -47,10 +48,11 @@ export default function WritePage({ searchParams }: PageProps<"/write">) {
 
 async function Run({ searchParams }: Pick<PageProps<"/write">, "searchParams">) {
   const params = await searchParams;
-  if (typeof params.essay === "string") return <EssayScreen id={params.essay} />;
+  const view = params.view === "review" ? "review" : "write";
+  if (typeof params.essay === "string") return <EssayScreen id={params.essay} view={view} fresh={params.new === "1"} />;
   const section = params.section === "A" ? "A" : "B";
   const run = params.run === "mock" ? "mock" : "practice";
-  return <WritingScreen prompt={{ ...PROMPTS[section], run }} />;
+  return <WritingScreen prompt={{ ...PROMPTS[section], run }} view={view} />;
 }
 
 function WritingSkeleton() {

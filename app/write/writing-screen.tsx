@@ -1,8 +1,19 @@
 "use client";
 
 import { CheckIcon, ClockIcon, PauseIcon, PlayIcon } from "lucide-react";
+import { useState } from "react";
 
 import { AppBar } from "@/components/app-bar";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -12,6 +23,7 @@ import { cn } from "@/lib/utils";
 import { countWords, type Block } from "./blocks";
 import { useDraft } from "./draft-store";
 import { EssayEditor } from "./essay-editor";
+import { ReviewProgress, ReviewView, useReviewFlow, useReviewProgress, useViewMode, type ViewMode } from "./review";
 import {
   EXAM_MINUTES,
   WARN_AT_MS,
@@ -21,7 +33,7 @@ import {
   status,
   type TimerStatus,
 } from "./timer";
-import { pauseTimer, resumeTimer, startTimer, useNow, useTimerState } from "./timer-store";
+import { endTimer, pauseTimer, resumeTimer, startTimer, useNow, useTimerState } from "./timer-store";
 
 export type Prompt = {
   id: string;
@@ -36,7 +48,7 @@ export type Prompt = {
 
 const RUN_LABEL = { practice: "Practice run", mock: "Mock run" } as const;
 
-export function WritingScreen({ prompt }: { prompt: Prompt }) {
+export function WritingScreen({ prompt, view = "write" }: { prompt: Prompt; view?: ViewMode }) {
   // Practice and mock runs of the same prompt keep separate drafts and clocks.
   const runId = `${prompt.id}:${prompt.run}`;
   const [blocks, setBlocks] = useDraft(runId);
@@ -51,6 +63,26 @@ export function WritingScreen({ prompt }: { prompt: Prompt }) {
       : null;
   const mock = prompt.run === "mock";
   const locked = clock?.status === "paused" || (mock && clock?.status === "over");
+
+  const [confirmEnd, setConfirmEnd] = useState(false);
+  const promptText = [prompt.title, prompt.instructions, prompt.excerpt].filter(Boolean).join("\n\n");
+  const flow = useReviewFlow(runId, blocks, promptText, { onFailed: () => setMode("write"), onRetry: review });
+  const [mode, setMode] = useViewMode(view, flow, blocks);
+  const progress = useReviewProgress(flow, blocks);
+  const words = blocks ? countWords(blocks) : 0;
+
+  function review() {
+    flow.open();
+    setMode("review");
+    window.scrollTo({ top: 0 });
+  }
+
+  // In a mock run, feedback before the end would break exam conditions, so
+  // reviewing hands the essay in.
+  function onReview() {
+    if (mock && clock?.status !== "over") setConfirmEnd(true);
+    else review();
+  }
 
   function onValueChange(next: Block[]) {
     // A practice run's clock starts with the first keystroke.
@@ -67,63 +99,150 @@ export function WritingScreen({ prompt }: { prompt: Prompt }) {
             {prompt.title}
           </span>
         </p>
-        <div className="flex h-4 shrink-0 items-center gap-3 text-label text-text-3">
-          <span className="max-sm:hidden">Section {prompt.section}</span>
-          <Separator orientation="vertical" className="max-sm:hidden" />
-          <span className="max-sm:hidden">{RUN_LABEL[prompt.run]}</span>
-          <Separator orientation="vertical" className="max-sm:hidden" />
-          <ExamClock
-            clock={clock}
-            durationMs={durationMs}
-            canPause={!mock}
-            onPause={() => pauseTimer(runId)}
-            onResume={() => resumeTimer(runId)}
-          />
-          <Separator orientation="vertical" />
-          <WordCount count={blocks ? countWords(blocks) : null} min={prompt.minWords} />
+        <div className="flex shrink-0 items-center gap-3">
+          <div className="flex h-4 items-center gap-3 text-label text-text-3">
+            {mode === "review" && progress && (
+              <>
+                <ReviewProgress {...progress} />
+                <Separator orientation="vertical" className="max-sm:hidden" />
+              </>
+            )}
+            <span className="max-sm:hidden">Section {prompt.section}</span>
+            <Separator orientation="vertical" className="max-sm:hidden" />
+            <span className="max-sm:hidden">{RUN_LABEL[prompt.run]}</span>
+            <Separator orientation="vertical" className="max-sm:hidden" />
+            <span className={cn(mode === "review" && "max-sm:hidden")}>
+              <ExamClock
+                clock={clock}
+                durationMs={durationMs}
+                canPause={!mock}
+                onPause={() => pauseTimer(runId)}
+                onResume={() => resumeTimer(runId)}
+              />
+            </span>
+            <Separator orientation="vertical" className={cn(mode === "review" && "max-sm:hidden")} />
+            <span className={cn(mode === "review" && "max-sm:hidden")}>
+              <WordCount count={blocks ? words : null} min={prompt.minWords} />
+            </span>
+          </div>
+          {mode === "write" ? (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onReview}
+              disabled={words === 0 || (mock && clock?.status === "idle")}
+            >
+              Review
+            </Button>
+          ) : (
+            <Button variant="outline" size="sm" onClick={() => setMode("write")}>
+              Back to essay
+            </Button>
+          )}
         </div>
       </AppBar>
 
-      {/* sm:px-10 leaves room in the left margin for the paragraph handles. */}
-      <main className="mx-auto w-full max-w-3xl px-4 sm:px-10">
-        <TimeAnnouncer clock={clock} mock={mock} />
+      <AlertDialog open={confirmEnd} onOpenChange={setConfirmEnd}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Hand in your mock run?</AlertDialogTitle>
+            <AlertDialogDescription>
+              The clock stops and your essay locks as it is, like handing it in at the exam. Then Ink reviews it.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Keep writing</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                endTimer(runId);
+                setConfirmEnd(false);
+                review();
+              }}
+            >
+              Hand in and review
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
-        <section className="pt-10">
-          <h1 className="font-serif text-essay-title" lang="fr">
-            {prompt.title}
-          </h1>
-          <p className="mt-3 max-w-prose text-body text-text-2" lang="fr">
-            {prompt.instructions}
-          </p>
-          {prompt.excerpt && (
-            <blockquote className="mt-6 max-w-prose border-l-2 pl-4 font-serif text-essay text-text-2" lang="fr">
-              {prompt.excerpt}
-            </blockquote>
+      {mode === "review" && blocks && clock ? (
+        // The same column and everything above the editor, so the text doesn't move.
+        <main className="mx-auto w-full max-w-3xl px-4 pb-40 sm:px-10">
+          <ReviewView
+            draftId={runId}
+            flow={flow}
+            blocks={blocks}
+            onBlocksChange={setBlocks}
+            heading={
+              <>
+                <PromptHeader prompt={prompt} />
+                <RunNote
+                  status={clock.status}
+                  mock={mock}
+                  handedIn={clock.status === "over" && clock.left > 0}
+                  minutes={minutes}
+                  onResume={() => resumeTimer(runId)}
+                />
+              </>
+            }
+          />
+        </main>
+      ) : (
+        // sm:px-10 leaves room in the left margin for the paragraph handles.
+        <main className="mx-auto w-full max-w-3xl px-4 sm:px-10">
+          <TimeAnnouncer clock={clock} mock={mock} />
+          <PromptHeader prompt={prompt} />
+
+          {!blocks || !clock ? (
+            <EditorSkeleton />
+          ) : mock && clock.status === "idle" ? (
+            <MockStart minutes={minutes} onStart={() => startTimer(runId)} />
+          ) : (
+            <>
+              <RunNote
+                status={clock.status}
+                mock={mock}
+                handedIn={clock.status === "over" && clock.left > 0}
+                minutes={minutes}
+                onResume={() => resumeTimer(runId)}
+              />
+              <EssayEditor
+                value={blocks}
+                onValueChange={onValueChange}
+                readOnly={locked}
+                aria-label="Your essay"
+                placeholder="Écrivez votre réponse ici…"
+                autoFocus
+                className="max-w-prose min-h-96 pb-40"
+              />
+            </>
           )}
-        </section>
-
-        <Separator className="my-8" />
-
-        {!blocks || !clock ? (
-          <EditorSkeleton />
-        ) : mock && clock.status === "idle" ? (
-          <MockStart minutes={minutes} onStart={() => startTimer(runId)} />
-        ) : (
-          <>
-            <RunNote status={clock.status} mock={mock} minutes={minutes} onResume={() => resumeTimer(runId)} />
-            <EssayEditor
-              value={blocks}
-              onValueChange={onValueChange}
-              readOnly={locked}
-              aria-label="Your essay"
-              placeholder="Écrivez votre réponse ici…"
-              autoFocus
-              className="max-w-prose min-h-96 pb-40"
-            />
-          </>
-        )}
-      </main>
+        </main>
+      )}
     </TooltipProvider>
+  );
+}
+
+// The prompt above the essay, shared by writing and review so the essay
+// starts at the same height in both.
+function PromptHeader({ prompt }: { prompt: Prompt }) {
+  return (
+    <>
+      <section className="pt-10">
+        <h1 className="font-serif text-essay-title" lang="fr">
+          {prompt.title}
+        </h1>
+        <p className="mt-3 max-w-prose text-body text-text-2" lang="fr">
+          {prompt.instructions}
+        </p>
+        {prompt.excerpt && (
+          <blockquote className="mt-6 max-w-prose border-l-2 pl-4 font-serif text-essay text-text-2" lang="fr">
+            {prompt.excerpt}
+          </blockquote>
+        )}
+      </section>
+      <Separator className="my-8" />
+    </>
   );
 }
 
@@ -183,7 +302,8 @@ function ExamClock({
 function TimeAnnouncer({ clock, mock }: { clock: Clock; mock: boolean }) {
   let message = "";
   if (clock && clock.status !== "idle") {
-    if (clock.left <= 0) message = mock ? "Time’s up. Your essay is locked." : "Time’s up. You can keep writing.";
+    if (clock.status === "over" && clock.left > 0) message = "Mock run handed in. Your essay is locked.";
+    else if (clock.left <= 0) message = mock ? "Time’s up. Your essay is locked." : "Time’s up. You can keep writing.";
     else if (clock.left <= 60_000) message = "1 minute left.";
     else if (clock.left <= WARN_AT_MS) message = "5 minutes left.";
   }
@@ -212,11 +332,14 @@ function MockStart({ minutes, onStart }: { minutes: number; onStart: () => void 
 function RunNote({
   status,
   mock,
+  handedIn,
   minutes,
   onResume,
 }: {
   status: TimerStatus;
   mock: boolean;
+  /** A mock run ended with Review before time was up. */
+  handedIn: boolean;
   minutes: number;
   onResume: () => void;
 }) {
@@ -241,9 +364,11 @@ function RunNote({
     <Note>
       <ClockIcon className="size-4 shrink-0 text-warn" aria-hidden />
       <span>
-        {mock
-          ? "Time’s up. Your essay is locked as you left it."
-          : "Time’s up. In the exam your essay would be collected now; keep writing to finish this practice."}
+        {handedIn
+          ? "You handed in this mock run. Your essay is locked as you left it."
+          : mock
+            ? "Time’s up. Your essay is locked as you left it."
+            : "Time’s up. In the exam your essay would be collected now; keep writing to finish this practice."}
       </span>
     </Note>
   );

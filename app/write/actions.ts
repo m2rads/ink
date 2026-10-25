@@ -11,20 +11,20 @@ import { matchesAccepted } from "@/lib/ai/correction";
 // AI Gateway budget.
 
 const essaySchema = z.object({
-  essayId: z.string().min(1).max(100),
-  title: z.string().max(500),
+  reviewId: z.string().min(1).max(100),
+  prompt: z.string().max(2_000),
   paragraphs: z.array(z.string().max(5_000)).min(1).max(60),
 });
 
-/** Check a finished essay. Empty paragraphs are kept so block indices still match the editor's. */
-export async function correctEssay(input: z.input<typeof essaySchema>): Promise<EssayCheck> {
+/** Review an essay. Empty paragraphs are kept so block indices still match the editor's. */
+export async function reviewEssay(input: z.input<typeof essaySchema>): Promise<EssayCheck> {
   const essay = essaySchema.parse(input);
   if (essay.paragraphs.every((p) => p.trim() === "")) return { arm: "none", model: "none", mistakes: [] };
   return checkEssay(essay);
 }
 
 const fixSchema = z.object({
-  essayId: z.string().min(1).max(100),
+  reviewId: z.string().min(1).max(100),
   sentence: z.string().max(2_000),
   wrong: z.string().max(500),
   attempt: z.string().max(500),

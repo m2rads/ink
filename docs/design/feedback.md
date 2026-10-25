@@ -12,7 +12,7 @@ Is it progress through a known number of steps (mistakes resolved)? → Progress
 
 ## Toast (Sonner)
 
-Call `toast` from `"sonner"`. `<Toaster />` must be mounted once; it's in `DemoProviders` today, not yet in `app/layout.tsx`. Mount it there the first time a real screen toasts.
+Call `toast` from `"sonner"`. `<Toaster />` is mounted once, in `app/layout.tsx`; don't mount another.
 
 - `toast.success("Fix accepted")`: something worked. `toast.error("Correction failed", { description: "Check your connection and retry." })`: something failed, and the description says what to do.
 - Titles are 2–5 words, past tense or a plain state, no trailing period: "Essay saved", not "Your essay has been successfully saved!".
@@ -29,4 +29,4 @@ Placeholder blocks for content loading longer than 400ms, matching the final lay
 
 ## Separator
 
-`<Separator />` (horizontal) between groups; `orientation="vertical"` between inline meta ("214 words | 31:08"), inside a container with a set height. For lines between list rows, use `border-b` on the rows instead.
+`<Separator />` (horizontal) between groups; `orientation="vertical"` between inline meta ("214 words | 31:08"), inside a container with a set height (it stretches to it). Given its own height in a taller row instead, add `data-vertical:self-center`, or it sticks to the top. For lines between list rows, use `border-b` on the rows instead.

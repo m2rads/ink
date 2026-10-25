@@ -6,24 +6,31 @@ import { z } from "zod";
 export const CATEGORIES = ["preposition", "agreement", "conjugation", "spelling"] as const;
 export type Category = (typeof CATEGORIES)[number];
 
-/** One mistake as the model reports it: located by quote, not by offset. */
+export const CATEGORY_LABEL: Record<Category, string> = {
+  preposition: "Prepositions",
+  agreement: "Agreement",
+  conjugation: "Conjugation",
+  spelling: "Spelling",
+};
+
+/**
+ * One mistake as the model reports it: located by quote, not by offset.
+ * Model-facing, so no optional fields or numeric bounds (OpenAI's strict
+ * structured outputs reject some); anchorMistakes validates instead.
+ */
 export const reportedMistakeSchema = z.object({
-  paragraph: z.number().int().min(1).describe("Number of the paragraph the mistake is in, as given in brackets."),
-  wrong: z
-    .string()
-    .min(1)
-    .describe("The mistaken words copied exactly from the paragraph: the shortest span that holds the error."),
+  paragraph: z.number().describe("Number of the paragraph the mistake is in, as given in brackets."),
+  wrong: z.string().describe("The mistaken words copied exactly from the paragraph: the shortest span that holds the error."),
   category: z.enum(CATEGORIES),
   fix: z.string().describe("The best correction of exactly that span."),
-  accept: z
-    .array(z.string())
-    .min(1)
-    .describe("Every correct rewrite of the span a teacher would accept, including fix."),
+  accept: z.array(z.string()).describe("Every correct rewrite of the span a teacher would accept, including fix."),
   rule: z.string().describe("The rule in under 60 characters, in English, e.g. “Dépendre always takes de”."),
   explain: z
     .string()
-    .describe("One or two sentences in English on why. Wrap French words in *asterisks*. Never quote the fix."),
-  hint: z.string().describe("A nudge toward the fix that doesn't give it away, in English."),
+    .describe(
+      "One or two sentences in English on why it's wrong, for this learner. Wrap French words in *asterisks*. Never give away the fix.",
+    ),
+  hint: z.string().describe("A nudge toward the fix that doesn't give it away, in English. Wrap French in *asterisks*."),
 });
 
 export const essayReportSchema = z.object({ mistakes: z.array(reportedMistakeSchema) });
@@ -55,13 +62,14 @@ export function anchorMistakes(
 
   for (const { paragraph, ...rest } of reported) {
     const block = paragraph - 1;
-    const text = paragraphs[block];
-    const span = text === undefined ? null : findFree(text, rest.wrong, mistakes.filter((m) => m.block === block));
+    const text = Number.isInteger(block) ? paragraphs[block] : undefined;
+    const span = !text || !rest.wrong ? null : findFree(text, rest.wrong, mistakes.filter((m) => m.block === block));
     if (!span) {
       dropped.push({ paragraph, ...rest });
       continue;
     }
-    mistakes.push({ ...rest, id: `${block}:${span.start}`, block, ...span });
+    const accept = rest.accept.includes(rest.fix) ? rest.accept : [rest.fix, ...rest.accept];
+    mistakes.push({ ...rest, accept, id: `${block}:${span.start}`, block, ...span });
   }
 
   mistakes.sort((a, b) => a.block - b.block || a.start - b.start);
@@ -90,4 +98,50 @@ export function matchesAccepted(attempt: string, accept: string[]): boolean {
 
 function normalize(s: string) {
   return s.normalize("NFC").replace(/[‘’ʼ]/g, "'").replace(/\s+/g, " ").trim();
+}
+
+/**
+ * Where `needle` is in `text` now. Edits after a review move marks around,
+ * so it picks the occurrence whose preceding text best matches `before` (the
+ * words that led up to it when it was marked), then the one closest to its
+ * old offset. A phrase that's gone returns null.
+ */
+export function locate(
+  text: string,
+  needle: string,
+  near: number,
+  before = "",
+): { start: number; end: number } | null {
+  if (!needle) return null;
+  let best = -1;
+  let bestScore = -1;
+  for (let i = text.indexOf(needle); i !== -1; i = text.indexOf(needle, i + 1)) {
+    const score = sharedSuffix(text.slice(0, i), before);
+    if (score > bestScore || (score === bestScore && Math.abs(i - near) < Math.abs(best - near))) {
+      best = i;
+      bestScore = score;
+    }
+  }
+  return best === -1 ? null : { start: best, end: best + needle.length };
+}
+
+/** How many characters `a` and `b` share at their ends. */
+function sharedSuffix(a: string, b: string) {
+  let n = 0;
+  while (n < a.length && n < b.length && a[a.length - 1 - n] === b[b.length - 1 - n]) n++;
+  return n;
+}
+
+/** The text just before an offset, kept with a mark so locate() can find it again. */
+export function contextBefore(text: string, start: number) {
+  return text.slice(Math.max(0, start - 24), start);
+}
+
+/** The sentence holding [start, end), so a fix is judged in context. */
+export function sentenceAround(text: string, start: number, end: number): string {
+  const before = text.slice(0, start);
+  const from = Math.max(before.search(/[^.!?…]*$/), 0);
+  const after = text.slice(end).search(/[.!?…]/);
+  const to = after === -1 ? text.length : end + after + 1;
+  return text.slice(from, to).trim();
 }

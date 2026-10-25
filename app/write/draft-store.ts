@@ -20,6 +20,11 @@ const drafts = createLocalStore<Block[]>({
 /** The saved draft, or `null` until the client has hydrated. */
 export const useDraft = drafts.useValue;
 
+/** For edits made outside the editor, such as a fix accepted in a review. */
+export const readDraft = drafts.read;
+export const writeDraft = drafts.write;
+export const removeDraft = drafts.remove;
+
 function parse(raw: string | null): Block[] | null {
   if (!raw) return null;
   try {

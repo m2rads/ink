@@ -3,6 +3,7 @@ import { describe, expect, test } from "bun:test";
 import {
   IDLE,
   elapsed,
+  end,
   formatClock,
   parseTimer,
   pause,
@@ -70,6 +71,22 @@ describe("pausing (practice)", () => {
   });
 });
 
+describe("ending early (mock)", () => {
+  test("stops the clock where it is and the run is over", () => {
+    const s = end(start(IDLE, 0), 10 * MIN);
+    expect(status(s, B, 20 * MIN)).toBe("over");
+    expect(remaining(s, B, 20 * MIN)).toBe(25 * MIN);
+  });
+
+  test("can't pause, resume or end again once ended", () => {
+    const s = end(start(IDLE, 0), 10 * MIN);
+    expect(pause(s, 11 * MIN)).toBe(s);
+    expect(resume(s, 11 * MIN)).toBe(s);
+    expect(end(s, 12 * MIN)).toBe(s);
+    expect(end(IDLE, 5)).toBe(IDLE);
+  });
+});
+
 describe("formatClock", () => {
   test("counts down in m:ss, rounding up", () => {
     expect(formatClock(B)).toBe("35:00");
@@ -98,6 +115,15 @@ describe("parseTimer", () => {
   test("round-trips a stored state", () => {
     const s = pause(start(IDLE, 100), 200);
     expect(parseTimer(JSON.stringify(s))).toEqual(s);
+  });
+
+  test("reads states saved before endedAt existed", () => {
+    expect(parseTimer(JSON.stringify({ startedAt: 100, pausedAt: null, pausedMs: 0 }))).toEqual({
+      startedAt: 100,
+      pausedAt: null,
+      pausedMs: 0,
+      endedAt: null,
+    });
   });
 
   test("rejects corrupt or partial data", () => {

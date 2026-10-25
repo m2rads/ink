@@ -8,6 +8,12 @@ import { createLocalStore } from "@/lib/local-store";
 // The user's essays: one index of metadata in localStorage until there's a
 // server. Each essay's text lives separately in the draft store
 // (app/write/draft-store.ts), keyed by the essay's id.
+//
+// An essay is saved only once something is written in it. New essay opens a
+// blank editor without saving anything; the first character of title or text
+// saves it (saveEssay), and a new essay cleared back to nothing is removed
+// again (removeEssay), so blank essays never reach the list, Recent or the
+// streak.
 
 export type EssayMeta = {
   id: string;
@@ -34,32 +40,52 @@ export function useEssays(): EssayMeta[] | null {
   return store.useValue(INDEX)[0];
 }
 
-/** Start a blank essay and return its id. */
-export function createEssay(): string {
-  const now = new Date().toISOString();
-  const essay: EssayMeta = { id: crypto.randomUUID(), title: "", words: 0, createdAt: now, updatedAt: now };
-  store.write(INDEX, [essay, ...store.read(INDEX)]);
-  return essay.id;
-}
-
-/** Create a blank essay and open it in the editor. */
+/** Open the editor on a new, unsaved essay. Nothing is stored until something is written. */
 export function useStartEssay() {
   const router = useRouter();
-  return useCallback(() => router.push(essayHref(createEssay())), [router]);
+  return useCallback(() => router.push(newEssayHref(crypto.randomUUID())), [router]);
 }
 
 export function essayHref(id: string) {
   return `/write?essay=${id}`;
 }
 
-/** Record an edit: new title or word count, and move the essay to the top. */
-export function updateEssay(id: string, patch: Partial<Pick<EssayMeta, "title" | "words">>) {
+/** An essay that isn't saved yet: `new` tells the editor an unknown id is a blank page, not a missing essay. */
+export function newEssayHref(id: string) {
+  return `/write?essay=${id}&new=1`;
+}
+
+/**
+ * Record an edit: new title or word count, and move the essay to the top.
+ * Saves the essay first if it isn't saved yet.
+ */
+export function saveEssay(id: string, patch: Partial<Pick<EssayMeta, "title" | "words">>) {
   const essays = store.read(INDEX);
   const current = essays.find((e) => e.id === id);
-  if (!current) return;
+  const now = new Date().toISOString();
+  if (!current) {
+    const essay: EssayMeta = { id, title: "", words: 0, ...patch, createdAt: now, updatedAt: now };
+    store.write(INDEX, [essay, ...essays]);
+    return;
+  }
   if (Object.entries(patch).every(([k, v]) => current[k as keyof EssayMeta] === v)) return;
-  const updated = { ...current, ...patch, updatedAt: new Date().toISOString() };
+  const updated = { ...current, ...patch, updatedAt: now };
   store.write(INDEX, [updated, ...essays.filter((e) => e.id !== id)]);
+}
+
+/** Whether something has been written: what it takes for an essay to be saved. */
+export function hasWriting(e: Pick<EssayMeta, "title" | "words">) {
+  return e.title.trim() !== "" || e.words > 0;
+}
+
+export function isSaved(id: string) {
+  return store.read(INDEX).some((e) => e.id === id);
+}
+
+/** Take an essay out of the list. Its text is the caller's to remove (draft store). */
+export function removeEssay(id: string) {
+  const essays = store.read(INDEX);
+  if (essays.some((e) => e.id === id)) store.write(INDEX, essays.filter((e) => e.id !== id));
 }
 
 export function essayTitle(e: Pick<EssayMeta, "title">): string {
@@ -82,7 +108,9 @@ function parse(raw: string | null): EssayMeta[] | null {
         typeof e?.title === "string" &&
         typeof e?.words === "number" &&
         typeof e?.createdAt === "string" &&
-        typeof e?.updatedAt === "string",
+        typeof e?.updatedAt === "string" &&
+        // Blank essays saved before essays were saved lazily.
+        hasWriting(e),
     );
   } catch {
     return null;

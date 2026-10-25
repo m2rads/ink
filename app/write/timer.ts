@@ -8,11 +8,13 @@ export type TimerState = {
   pausedAt: number | null;
   /** Total time spent paused before the current pause. */
   pausedMs: number;
+  /** Set when a mock run is handed in before time is up. */
+  endedAt: number | null;
 };
 
 export type TimerStatus = "idle" | "running" | "paused" | "over";
 
-export const IDLE: TimerState = { startedAt: null, pausedAt: null, pausedMs: 0 };
+export const IDLE: TimerState = { startedAt: null, pausedAt: null, pausedMs: 0, endedAt: null };
 
 export const EXAM_MINUTES = { A: 25, B: 35 } as const;
 
@@ -20,22 +22,30 @@ export const EXAM_MINUTES = { A: 25, B: 35 } as const;
 export const WARN_AT_MS = 5 * 60_000;
 
 export function start(s: TimerState, now: number): TimerState {
-  return s.startedAt === null ? { startedAt: now, pausedAt: null, pausedMs: 0 } : s;
+  return s.startedAt === null ? { startedAt: now, pausedAt: null, pausedMs: 0, endedAt: null } : s;
 }
 
 export function pause(s: TimerState, now: number): TimerState {
-  return s.startedAt !== null && s.pausedAt === null ? { ...s, pausedAt: now } : s;
+  return s.startedAt !== null && s.pausedAt === null && s.endedAt === null ? { ...s, pausedAt: now } : s;
 }
 
 export function resume(s: TimerState, now: number): TimerState {
-  return s.pausedAt === null ? s : { ...s, pausedAt: null, pausedMs: s.pausedMs + (now - s.pausedAt) };
+  return s.pausedAt === null || s.endedAt !== null
+    ? s
+    : { ...s, pausedAt: null, pausedMs: s.pausedMs + (now - s.pausedAt) };
+}
+
+/** Hand the run in early: the clock stops where it is and the run is over. */
+export function end(s: TimerState, now: number): TimerState {
+  if (s.startedAt === null || s.endedAt !== null) return s;
+  return { ...s, endedAt: s.pausedAt ?? now };
 }
 
 export function elapsed(s: TimerState, now: number): number {
   if (s.startedAt === null) return 0;
   // `now` comes from a once-a-second tick, so just after starting it can be
   // slightly older than `startedAt`; never let that read as more than full time.
-  return Math.max(0, (s.pausedAt ?? now) - s.startedAt - s.pausedMs);
+  return Math.max(0, (s.endedAt ?? s.pausedAt ?? now) - s.startedAt - s.pausedMs);
 }
 
 /** Negative once time is up (practice runs keep going into overtime). */
@@ -45,7 +55,7 @@ export function remaining(s: TimerState, durationMs: number, now: number): numbe
 
 export function status(s: TimerState, durationMs: number, now: number): TimerStatus {
   if (s.startedAt === null) return "idle";
-  if (remaining(s, durationMs, now) <= 0) return "over";
+  if (s.endedAt !== null || remaining(s, durationMs, now) <= 0) return "over";
   return s.pausedAt === null ? "running" : "paused";
 }
 
@@ -77,8 +87,15 @@ export function parseTimer(raw: string | null): TimerState | null {
   try {
     const t = JSON.parse(raw) as Partial<TimerState>;
     const num = (v: unknown) => typeof v === "number" && Number.isFinite(v);
-    if ((t.startedAt === null || num(t.startedAt)) && (t.pausedAt === null || num(t.pausedAt)) && num(t.pausedMs)) {
-      return { startedAt: t.startedAt ?? null, pausedAt: t.pausedAt ?? null, pausedMs: t.pausedMs! };
+    // endedAt is newer than the rest; states saved before it have none.
+    const endedAt = t.endedAt ?? null;
+    if (
+      (t.startedAt === null || num(t.startedAt)) &&
+      (t.pausedAt === null || num(t.pausedAt)) &&
+      num(t.pausedMs) &&
+      (endedAt === null || num(endedAt))
+    ) {
+      return { startedAt: t.startedAt ?? null, pausedAt: t.pausedAt ?? null, pausedMs: t.pausedMs!, endedAt };
     }
   } catch {
     // Corrupt JSON: treat as a run that hasn't started.

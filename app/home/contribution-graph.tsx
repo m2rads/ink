@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import { cn } from "@/lib/utils";
 
@@ -33,6 +33,13 @@ export function ContributionGraph({
   const year = useMemo(() => buildYear(activity, today), [activity, today]);
   const [hovered, setHovered] = useState<Day | null>(null);
 
+  // Where the graph scrolls (phones), start at today's end, not a year ago.
+  const scroller = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const el = scroller.current;
+    if (el) el.scrollLeft = el.scrollWidth;
+  }, []);
+
   const summary =
     year.total === 0
       ? "No essays in the last year"
@@ -40,7 +47,7 @@ export function ContributionGraph({
 
   return (
     <figure className={cn("min-w-0", className)}>
-      <div className="overflow-x-auto pb-1">
+      <div ref={scroller} className="isolate overflow-x-auto pb-1">
         <div className="grid min-w-160 gap-y-1">
           <div className={cn("grid gap-x-1 text-caption text-text-3", COLUMNS)} aria-hidden>
             {year.months.map((m) => (
@@ -56,7 +63,12 @@ export function ContributionGraph({
             className={cn("grid grid-flow-col grid-rows-7 gap-1", COLUMNS)}
           >
             {WEEKDAYS.map((d, i) => (
-              <span key={`label-${i}`} className="flex items-center text-caption leading-none text-text-3" aria-hidden>
+              // Pinned, so the weekdays stay readable while the weeks scroll under them.
+              <span
+                key={`label-${i}`}
+                className="sticky left-0 z-10 flex items-center bg-bg text-caption leading-none text-text-3"
+                aria-hidden
+              >
                 {d}
               </span>
             ))}
@@ -65,7 +77,11 @@ export function ContributionGraph({
                 key={day.date}
                 aria-hidden
                 onPointerEnter={() => !day.future && setHovered(day)}
-                className={cn("aspect-square rounded-cell", day.future ? "invisible" : LEVEL[Math.min(day.count, 4)])}
+                className={cn(
+                  "aspect-square rounded-cell",
+                  day.future ? "invisible" : LEVEL[Math.min(day.count, 4)],
+                  hovered?.date === day.date && "outline-1 outline-offset-1 outline-text-3 outline-solid",
+                )}
               />
             ))}
           </div>

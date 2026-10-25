@@ -33,7 +33,7 @@ export function HomeScreen() {
       <SidebarInset>
         <header className="flex h-14 shrink-0 items-center gap-2 border-b px-4">
           <SidebarTrigger className="-ml-1" />
-          <Separator orientation="vertical" className="h-4" />
+          <Separator orientation="vertical" className="h-4 data-vertical:self-center" />
           <h1 className="text-label font-medium">Home</h1>
         </header>
 
@@ -61,21 +61,18 @@ export function HomeScreen() {
   );
 }
 
+// The year's totals are the graph's caption; this line says where today stands.
 function Streak({ activity, today }: { activity: Activity[]; today: string }) {
   const streak = currentStreak(activity, today);
-  const yearAgo = localDay(new Date(new Date(`${today}T00:00:00`).getTime() - 365 * 86_400_000));
-  const lastYear = activity.filter((a) => a.date > yearAgo);
-  const words = lastYear.reduce((n, a) => n + a.words, 0);
+  const wroteToday = activity.some((a) => a.date === today);
   return (
     <div>
       <p className="flex items-baseline gap-3">
         <span className="text-display tabular-nums">{streak}</span>
         <span className="text-title text-text-2">day streak</span>
       </p>
-      <p className="mt-2 text-ui text-text-3 tabular-nums">
-        {lastYear.length === 0
-          ? "Write today to start a streak."
-          : `${plural(lastYear.length, "essay")} and ${plural(words, "word")} in the last year`}
+      <p className="mt-2 text-ui text-text-3">
+        {wroteToday ? "You wrote today." : streak > 0 ? "Write today to keep it going." : "Write today to start a streak."}
       </p>
     </div>
   );
@@ -101,7 +98,7 @@ function Recent({ essays }: { essays: EssayMeta[] | null }) {
           <li key={e.id}>
             <Link
               href={essayHref(e.id)}
-              className="flex items-baseline gap-4 py-3 transition-colors hover:text-text-2 focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-focus-ring"
+              className="flex items-baseline gap-4 rounded-row py-3 transition-colors hover:text-text-2 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-solid focus-visible:outline-focus-ring"
             >
               <span
                 className={e.title.trim() ? "min-w-0 flex-1 truncate font-serif text-body" : "min-w-0 flex-1 truncate font-serif text-body text-text-3"}

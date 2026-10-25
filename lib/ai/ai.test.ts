@@ -3,7 +3,8 @@ import { MockLanguageModelV4 } from "ai/test";
 
 import { checkEssay } from "./check";
 import { DEFAULT_CONFIG, parseConfig, pickArm, type Arm } from "./config";
-import { anchorMistakes, matchesAccepted, type ReportedMistake } from "./correction";
+import { resolveModel } from "./models";
+import { anchorMistakes, contextBefore, locate, matchesAccepted, sentenceAround, type ReportedMistake } from "./correction";
 
 const quiet = { error: mock(), info: mock() };
 console.error = quiet.error;
@@ -88,9 +89,11 @@ describe("anchorMistakes", () => {
       report({ paragraph: 1, wrong: "jours" }),
       report({ paragraph: 1, wrong: "à la maison" }),
       report({ paragraph: 9, wrong: "Je" }),
+      report({ paragraph: 1.5, wrong: "Je" }),
+      report({ paragraph: 1, wrong: "" }),
     ]);
     expect(mistakes).toHaveLength(1);
-    expect(dropped.map((d) => d.wrong)).toEqual(["jours", "à la maison", "Je"]);
+    expect(dropped.map((d) => d.wrong)).toEqual(["jours", "à la maison", "Je", "Je", ""]);
   });
 });
 
@@ -112,7 +115,7 @@ describe("checkEssay", () => {
             type: "text",
             text: JSON.stringify({
               mistakes: [
-                report({ paragraph: 1, wrong: "chaque jours", category: "agreement", accept: ["chaque jour"] }),
+                report({ paragraph: 1, wrong: "chaque jours", category: "agreement", fix: "chaque jour", accept: [] }),
                 report({ paragraph: 1, wrong: "invented" }),
               ],
             }),
@@ -126,10 +129,67 @@ describe("checkEssay", () => {
         warnings: [],
       }),
     });
-    const result = await checkEssay({ essayId: "e1", title: "", paragraphs: ["Je lis chaque jours."] }, model);
+    const result = await checkEssay({ reviewId: "r1", prompt: "", paragraphs: ["Je lis chaque jours."] }, model);
     expect(result.arm).toBe("override");
     expect(result.model).toBe("mock/french");
     expect(result.mistakes).toHaveLength(1);
     expect(result.mistakes[0]).toMatchObject({ block: 0, start: 7, end: 19, category: "agreement" });
+    // The fix is always an accepted answer, even when the model leaves it out of accept.
+    expect(result.mistakes[0].accept).toEqual(["chaque jour"]);
+  });
+});
+
+describe("locate", () => {
+  test("keeps the old offset when the phrase is still there", () => {
+    expect(locate("le chat et le chien", "le", 11)).toEqual({ start: 11, end: 13 });
+  });
+
+  test("follows the phrase by the words before it after an edit", () => {
+    const before = contextBefore("le chat et le chien", 11);
+    expect(locate("Hier, le chat et le chien", "le", 11, before)).toEqual({ start: 17, end: 19 });
+  });
+
+  test("falls back to the nearest occurrence", () => {
+    expect(locate("le chat et le chien", "le", 9)).toEqual({ start: 11, end: 13 });
+  });
+
+  test("returns null once the phrase is gone", () => {
+    expect(locate("la chatte", "le", 0)).toBeNull();
+  });
+});
+
+describe("sentenceAround", () => {
+  const text = "J’aime Paris. Il faut que les gens peuvent choisir ! Bien sûr.";
+
+  test("returns the sentence holding the span", () => {
+    const start = text.indexOf("peuvent");
+    expect(sentenceAround(text, start, start + 7)).toBe("Il faut que les gens peuvent choisir !");
+  });
+
+  test("works at the edges of the paragraph", () => {
+    expect(sentenceAround(text, 0, 6)).toBe("J’aime Paris.");
+    expect(sentenceAround("Sans point final", 5, 10)).toBe("Sans point final");
+  });
+});
+
+describe("resolveModel", () => {
+  test("sends providers without their own key through AI Gateway", () => {
+    expect(resolveModel("openai/gpt-6-sol", { AI_GATEWAY_API_KEY: "vck_x" })).toBe("openai/gpt-6-sol");
+    expect(resolveModel("anthropic/claude-sonnet-5.5", { VERCEL_OIDC_TOKEN: "t", OPENAI_API_KEY: "sk-x" })).toBe(
+      "anthropic/claude-sonnet-5.5",
+    );
+  });
+
+  test("calls OpenAI directly when there's an OpenAI key, even with a Gateway key", () => {
+    for (const env of [{ OPENAI_API_KEY: "sk-x" }, { OPENAI_API_KEY: "sk-x", AI_GATEWAY_API_KEY: "vck_x" }]) {
+      const model = resolveModel("openai/gpt-6-sol", env);
+      expect(typeof model).not.toBe("string");
+      expect(model).toMatchObject({ modelId: "gpt-6-sol" });
+    }
+  });
+
+  test("says which key is missing", () => {
+    expect(() => resolveModel("openai/gpt-6-sol", {})).toThrow(/AI_GATEWAY_API_KEY or OPENAI_API_KEY/);
+    expect(() => resolveModel("anthropic/claude-sonnet-5.5", { OPENAI_API_KEY: "sk-x" })).toThrow(/add "anthropic"/);
   });
 });

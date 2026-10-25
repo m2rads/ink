@@ -25,9 +25,12 @@ Is it a color, background or border change on hover/press/focus?
 | Paragraph drop: settles into its slot | 150ms | — | `ease-out` |
 | Paragraph moved by keyboard or menu | 200ms (both swap, FLIP) | — | `ease-in-out` |
 | Button press | 150ms to `scale-[0.96]` | 150ms | `ease-out` |
+| Correction note opening / closing: card height (grid rows `0fr`↔`1fr`) and contents (fade, 4px lift) | 200ms | 150ms | `ease-out` in, `ease-in` out |
+| Margin notes below a resizing note | follow it frame by frame (no transition of their own) | — | the note's |
+| Margin notes after a filter change or a resolved mistake | 200ms | — | `ease-in-out` |
 
 Rules:
-- Animate `opacity`, `scale` and `translate` only. Never `transition-all` or animated `width`, `height`, `margin`, `padding` or `top/left`. Name the properties: `transition-[opacity,scale]`.
+- Animate `opacity`, `scale` and `translate` only. Never `transition-all` or animated `width`, `height`, `margin`, `padding` or `top/left`. Name the properties: `transition-[opacity,scale]`. One exception: expanding a panel in place (the correction note) transitions `grid-template-rows` between `0fr` and `1fr`, with the content in an `overflow-hidden min-h-0` child; keep the collapsed content mounted and `inert` so it can animate out.
 - Enter from `scale-95` (popovers) or `scale-[0.97]` (dialogs, tooltips), never from 0. Scale from the trigger with `origin-(--transform-origin)`.
 - Exits are 25–35% shorter than enters. Nothing in the product takes longer than 300ms.
 - Base UI elements animate with `data-starting-style:` / `data-ending-style:` and CSS transitions, not keyframes: transitions reverse cleanly when interrupted.
