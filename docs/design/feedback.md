@@ -6,6 +6,7 @@ Sources: `components/ui/sonner.tsx`, `progress.tsx`, `skeleton.tsx`, `separator.
 Is the message about one field? → inline text under the field (forms.md), never a toast
 Is it the result of something that finished in the background (saved, correction ready, failed)? → toast
 Does the user need to decide something? → AlertDialog or Dialog (overlays.md), never a toast
+Is an AI call running? → a trace of the steps it is really on (Review's `ReviewTrace`), never steps faked on a timer
 Is something loading for more than 400ms? → Skeleton shaped like the result
 Is it progress through a known number of steps (mistakes resolved)? → Progress
 ```

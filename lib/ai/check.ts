@@ -1,8 +1,8 @@
-import { generateText, Output, type LanguageModel } from "ai";
+import { generateText, Output, streamText, type LanguageModel } from "ai";
 import { z } from "zod";
 
 import { armFor, type Arm, type Task } from "./config";
-import { anchorMistakes, essayReportSchema, type Mistake } from "./correction";
+import { anchorMistakes, essayReportSchema, type Mistake, type ReportedMistake } from "./correction";
 import { CHECK_INSTRUCTIONS, FIX_INSTRUCTIONS } from "./instructions";
 import { resolveModel } from "./models";
 
@@ -20,9 +20,20 @@ export type EssayInput = {
 
 export type EssayCheck = { arm: string; model: string; mistakes: Mistake[] };
 
-export async function checkEssay(input: EssayInput, model?: LanguageModel): Promise<EssayCheck> {
+export type CheckOptions = {
+  /** Replaces the configured arm (tests, evals). */
+  model?: LanguageModel;
+  /** Called as the model writes its mistakes out, with how many are anchored so far. */
+  onFound?: (count: number) => void;
+};
+
+// Streamed so the review can show progress. A reasoning model thinks first
+// and then writes the mistakes out one by one; every mistake but the last in
+// a partial output is complete, so those are anchored and counted as they
+// arrive, and the count matches the final result's.
+export async function checkEssay(input: EssayInput, { model, onFound }: CheckOptions = {}): Promise<EssayCheck> {
   return run("check", input.reviewId, model, async (m, arm) => {
-    const { output, usage } = await generateText({
+    const stream = streamText({
       model: m,
       reasoning: arm.reasoning,
       instructions: CHECK_INSTRUCTIONS,
@@ -30,6 +41,13 @@ export async function checkEssay(input: EssayInput, model?: LanguageModel): Prom
       output: Output.object({ schema: essayReportSchema }),
       abortSignal: AbortSignal.timeout(120_000),
     });
+    let found = 0;
+    for await (const partial of stream.partialOutputStream) {
+      const complete = (partial.mistakes ?? []).slice(0, -1) as ReportedMistake[];
+      const count = anchorMistakes(input.paragraphs, complete).mistakes.length;
+      if (count > found) onFound?.((found = count));
+    }
+    const [output, usage] = await Promise.all([stream.output, stream.usage]);
     const { mistakes, dropped } = anchorMistakes(input.paragraphs, output.mistakes);
     return { result: { mistakes }, log: { mistakes: mistakes.length, dropped: dropped.length, usage } };
   });

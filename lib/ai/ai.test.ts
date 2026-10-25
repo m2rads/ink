@@ -1,4 +1,5 @@
 import { describe, expect, mock, test } from "bun:test";
+import { simulateReadableStream } from "ai";
 import { MockLanguageModelV4 } from "ai/test";
 
 import { checkEssay } from "./check";
@@ -105,37 +106,53 @@ describe("matchesAccepted", () => {
 });
 
 describe("checkEssay", () => {
-  test("returns anchored mistakes and the arm that made them", async () => {
-    const model = new MockLanguageModelV4({
+  const paragraphs = ["Je lis chaque jours.", "Il a parlé a sa mère."];
+  const json = JSON.stringify({
+    mistakes: [
+      report({ paragraph: 1, wrong: "chaque jours", category: "agreement", fix: "chaque jour", accept: [] }),
+      report({ paragraph: 1, wrong: "invented" }),
+      report({ paragraph: 2, wrong: "a sa", category: "preposition", fix: "à sa", accept: ["à sa"] }),
+    ],
+  });
+  // The text in 20-character deltas, the way a provider streams it.
+  const model = () =>
+    new MockLanguageModelV4({
       provider: "mock",
       modelId: "french",
-      doGenerate: async () => ({
-        content: [
-          {
-            type: "text",
-            text: JSON.stringify({
-              mistakes: [
-                report({ paragraph: 1, wrong: "chaque jours", category: "agreement", fix: "chaque jour", accept: [] }),
-                report({ paragraph: 1, wrong: "invented" }),
-              ],
-            }),
-          },
-        ],
-        finishReason: { unified: "stop", raw: undefined },
-        usage: {
-          inputTokens: { total: 10, noCache: 10, cacheRead: undefined, cacheWrite: undefined },
-          outputTokens: { total: 20, text: 20, reasoning: undefined },
-        },
-        warnings: [],
+      doStream: async () => ({
+        stream: simulateReadableStream({
+          chunks: [
+            { type: "text-start", id: "t" },
+            ...(json.match(/.{1,20}/g) ?? []).map((delta) => ({ type: "text-delta" as const, id: "t", delta })),
+            { type: "text-end", id: "t" },
+            {
+              type: "finish",
+              finishReason: { unified: "stop", raw: undefined },
+              usage: {
+                inputTokens: { total: 10, noCache: 10, cacheRead: undefined, cacheWrite: undefined },
+                outputTokens: { total: 20, text: 20, reasoning: undefined },
+              },
+            },
+          ],
+        }),
       }),
     });
-    const result = await checkEssay({ reviewId: "r1", prompt: "", paragraphs: ["Je lis chaque jours."] }, model);
+
+  test("returns anchored mistakes and the arm that made them", async () => {
+    const result = await checkEssay({ reviewId: "r1", prompt: "", paragraphs }, { model: model() });
     expect(result.arm).toBe("override");
     expect(result.model).toBe("mock/french");
-    expect(result.mistakes).toHaveLength(1);
+    expect(result.mistakes).toHaveLength(2);
     expect(result.mistakes[0]).toMatchObject({ block: 0, start: 7, end: 19, category: "agreement" });
     // The fix is always an accepted answer, even when the model leaves it out of accept.
     expect(result.mistakes[0].accept).toEqual(["chaque jour"]);
+  });
+
+  test("counts mistakes as they stream in, skipping ones that don't anchor", async () => {
+    const counts: number[] = [];
+    await checkEssay({ reviewId: "r1", prompt: "", paragraphs }, { model: model(), onFound: (n) => counts.push(n) });
+    // The last mistake is only complete in the final output, so the stream counts up to one before it.
+    expect(counts).toEqual([1]);
   });
 });
 

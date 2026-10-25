@@ -1,11 +1,13 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { CircleCheckIcon, CircleDashedIcon, LoaderCircleIcon } from "lucide-react";
 import { toast } from "sonner";
 
 import { Progress } from "@/components/ui/progress";
-import { Skeleton } from "@/components/ui/skeleton";
+import type { EssayCheck } from "@/lib/ai/check";
 import { locate, matchesAccepted, sentenceAround } from "@/lib/ai/correction";
+import { cn } from "@/lib/utils";
 
 import { checkFix, reviewEssay } from "./actions";
 import type { Block } from "./blocks";
@@ -32,6 +34,8 @@ import {
 export type ReviewFlow = {
   review: Review | null | undefined;
   status: "idle" | "checking";
+  /** While checking: how many mistakes the model has written out so far. */
+  found: number;
   /** Review the essay, or reopen the last review if the text hasn't changed. */
   open: () => void;
 };
@@ -51,6 +55,7 @@ export function useReviewFlow(
 ): ReviewFlow {
   const review = useReview(draftId);
   const [status, setStatus] = useState<ReviewFlow["status"]>("idle");
+  const [found, setFound] = useState(0);
 
   // The toast outlives this render; Retry must review the text as it is
   // when pressed, not as it was when the review failed.
@@ -62,9 +67,17 @@ export function useReviewFlow(
   async function run() {
     if (!blocks) return;
     setStatus("checking");
+    setFound(0);
     const id = crypto.randomUUID();
     try {
-      const result = await reviewEssay({ reviewId: id, prompt, paragraphs: blocks.map((b) => b.text) });
+      const events = await reviewEssay({ reviewId: id, prompt, paragraphs: blocks.map((b) => b.text) });
+      const reader = events.getReader();
+      let result: EssayCheck | undefined;
+      for (let read = await reader.read(); !read.done; read = await reader.read()) {
+        if (read.value.type === "found") setFound(read.value.count);
+        else result = read.value.check;
+      }
+      if (!result) throw new Error("Review ended without a result");
       saveReview(draftId, newReview(blocks, result, id));
       setStatus("idle");
     } catch (error) {
@@ -82,6 +95,7 @@ export function useReviewFlow(
   return {
     review,
     status,
+    found,
     open() {
       if (!blocks || status === "checking") return;
       toast.dismiss(`review-failed:${draftId}`);
@@ -210,8 +224,7 @@ export function ReviewView({
               <p className="text-label text-text-3" aria-live="polite">
                 Reviewing your essay…
               </p>
-              {/* Shaped like the filter chips that replace it, so the essay doesn't shift when they arrive. */}
-              <Skeleton className="h-9 w-72 max-w-full rounded-full" aria-hidden />
+              <ReviewTrace paragraphs={blocks.filter((b) => b.text.trim()).length} found={flow.found} />
             </>
           ) : (
             <>
@@ -230,6 +243,37 @@ export function ReviewView({
         </div>
       </Correction.Layout>
     </Correction>
+  );
+}
+
+/**
+ * What the check is doing, in the filter chips' place and their height, so
+ * the essay doesn't shift when they arrive. Only what really happens: the
+ * model reads the whole essay first, then writes the mistakes out one by one.
+ */
+function ReviewTrace({ paragraphs, found }: { paragraphs: number; found: number }) {
+  const reading = found === 0;
+  return (
+    <ol aria-label="Review progress" className="flex h-9 flex-col justify-between">
+      <TraceStep state={reading ? "running" : "done"}>
+        {reading ? "Reading" : "Read"} {paragraphs} {paragraphs === 1 ? "paragraph" : "paragraphs"}
+      </TraceStep>
+      <TraceStep state={reading ? "pending" : "running"}>
+        {reading ? "Marking mistakes" : `Found ${found} ${found === 1 ? "mistake" : "mistakes"}`}
+      </TraceStep>
+    </ol>
+  );
+}
+
+const STEP_ICON = { done: CircleCheckIcon, running: LoaderCircleIcon, pending: CircleDashedIcon };
+
+function TraceStep({ state, children }: { state: keyof typeof STEP_ICON; children: React.ReactNode }) {
+  const Icon = STEP_ICON[state];
+  return (
+    <li className={cn("flex items-center gap-2 text-label tabular-nums", state === "running" ? "text-text-2" : "text-text-3")}>
+      <Icon aria-hidden className={cn("size-3.5 shrink-0", state === "running" && "animate-spin")} />
+      {children}
+    </li>
   );
 }
 

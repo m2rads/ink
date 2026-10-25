@@ -16,11 +16,28 @@ const essaySchema = z.object({
   paragraphs: z.array(z.string().max(5_000)).min(1).max(60),
 });
 
-/** Review an essay. Empty paragraphs are kept so block indices still match the editor's. */
-export async function reviewEssay(input: z.input<typeof essaySchema>): Promise<EssayCheck> {
+export type ReviewEvent = { type: "found"; count: number } | { type: "done"; check: EssayCheck };
+
+/**
+ * Review an essay, streamed: a `found` event each time the count of mistakes
+ * so far goes up, then `done` with the result. Empty paragraphs are kept so
+ * block indices still match the editor's.
+ */
+export async function reviewEssay(input: z.input<typeof essaySchema>): Promise<ReadableStream<ReviewEvent>> {
   const essay = essaySchema.parse(input);
-  if (essay.paragraphs.every((p) => p.trim() === "")) return { arm: "none", model: "none", mistakes: [] };
-  return checkEssay(essay);
+  return new ReadableStream({
+    async start(events) {
+      try {
+        const check = essay.paragraphs.every((p) => p.trim() === "")
+          ? { arm: "none", model: "none", mistakes: [] }
+          : await checkEssay(essay, { onFound: (count) => events.enqueue({ type: "found", count }) });
+        events.enqueue({ type: "done", check });
+        events.close();
+      } catch (error) {
+        events.error(error);
+      }
+    },
+  });
 }
 
 const fixSchema = z.object({
