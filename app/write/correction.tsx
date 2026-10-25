@@ -70,35 +70,37 @@ type Feedback = { kind: "unchanged" } | { kind: "wrong"; text: string } | { kind
 type MistakePatch = Partial<Pick<CorrectionMistake, "status" | "attempts" | "hinted">>;
 
 // Category color classes, written out so Tailwind sees them. Tints only, at
-// the strengths color.md allows.
+// the strengths color.md allows: quiet at rest (/8, underline at 60%), so the
+// mark being fixed or focused stands out at full strength (/24) with no ring
+// or padding of its own.
 const TONE: Record<Category, { text: string; dot: string; mark: string; skipped: string; field: string }> = {
   preposition: {
     text: "text-c-prep",
     dot: "bg-c-prep",
-    mark: "bg-c-prep/14 decoration-c-prep hover:bg-c-prep/24",
-    skipped: "decoration-c-prep hover:bg-c-prep/14",
-    field: "border-c-prep bg-c-prep/12",
+    mark: "bg-c-prep/8 decoration-c-prep/60 hover:bg-c-prep/14 hover:decoration-c-prep focus-visible:bg-c-prep/24 focus-visible:decoration-c-prep",
+    skipped: "decoration-c-prep/60 hover:bg-c-prep/8 hover:decoration-c-prep focus-visible:bg-c-prep/24 focus-visible:decoration-c-prep",
+    field: "bg-c-prep/24 decoration-c-prep",
   },
   agreement: {
     text: "text-c-accord",
     dot: "bg-c-accord",
-    mark: "bg-c-accord/14 decoration-c-accord hover:bg-c-accord/24",
-    skipped: "decoration-c-accord hover:bg-c-accord/14",
-    field: "border-c-accord bg-c-accord/12",
+    mark: "bg-c-accord/8 decoration-c-accord/60 hover:bg-c-accord/14 hover:decoration-c-accord focus-visible:bg-c-accord/24 focus-visible:decoration-c-accord",
+    skipped: "decoration-c-accord/60 hover:bg-c-accord/8 hover:decoration-c-accord focus-visible:bg-c-accord/24 focus-visible:decoration-c-accord",
+    field: "bg-c-accord/24 decoration-c-accord",
   },
   conjugation: {
     text: "text-c-conj",
     dot: "bg-c-conj",
-    mark: "bg-c-conj/14 decoration-c-conj hover:bg-c-conj/24",
-    skipped: "decoration-c-conj hover:bg-c-conj/14",
-    field: "border-c-conj bg-c-conj/12",
+    mark: "bg-c-conj/8 decoration-c-conj/60 hover:bg-c-conj/14 hover:decoration-c-conj focus-visible:bg-c-conj/24 focus-visible:decoration-c-conj",
+    skipped: "decoration-c-conj/60 hover:bg-c-conj/8 hover:decoration-c-conj focus-visible:bg-c-conj/24 focus-visible:decoration-c-conj",
+    field: "bg-c-conj/24 decoration-c-conj",
   },
   spelling: {
     text: "text-c-ortho",
     dot: "bg-c-ortho",
-    mark: "bg-c-ortho/14 decoration-c-ortho hover:bg-c-ortho/24",
-    skipped: "decoration-c-ortho hover:bg-c-ortho/14",
-    field: "border-c-ortho bg-c-ortho/12",
+    mark: "bg-c-ortho/8 decoration-c-ortho/60 hover:bg-c-ortho/14 hover:decoration-c-ortho focus-visible:bg-c-ortho/24 focus-visible:decoration-c-ortho",
+    skipped: "decoration-c-ortho/60 hover:bg-c-ortho/8 hover:decoration-c-ortho focus-visible:bg-c-ortho/24 focus-visible:decoration-c-ortho",
+    field: "bg-c-ortho/24 decoration-c-ortho",
   },
 };
 
@@ -607,8 +609,7 @@ function Mark({ mistake: m }: { mistake: CorrectionMistake }) {
         // ::before stretches the hit area to the full line height; any taller
         // and marks on neighboring lines would overlap. On phones the note
         // under the paragraph is the 44px target for the same mistake.
-        "relative -mx-0.5 inline cursor-pointer rounded-row px-0.5 underline before:absolute before:inset-x-0 before:-inset-y-0.5 decoration-2 underline-offset-4 decoration-skip-ink-none transition-colors duration-150 ease-out",
-        FOCUS,
+        "relative -mx-0.5 inline cursor-pointer rounded-row px-0.5 underline outline-none before:absolute before:inset-x-0 before:-inset-y-0.5 decoration-[1.5px] underline-offset-4 decoration-skip-ink-none transition-colors duration-150 ease-out",
         m.status === "skipped" ? cn("decoration-dashed", tone.skipped) : tone.mark,
       )}
     >
@@ -654,7 +655,7 @@ function FixInput({ mistake: m }: { mistake: CorrectionMistake }) {
     const ctx = document.createElement("canvas").getContext("2d");
     if (!ctx) return;
     ctx.font = `${style.fontStyle} ${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
-    el.style.width = `${Math.ceil(Math.max(ctx.measureText(value || "____").width, 40) + 16)}px`;
+    el.style.width = `${Math.ceil(Math.max(ctx.measureText(value).width, 8) + 4)}px`;
   }, [value]);
 
   // Focus on open, caret at the end, and bring it into view if it's off screen.
@@ -709,13 +710,12 @@ function FixInput({ mistake: m }: { mistake: CorrectionMistake }) {
       enterKeyHint="done"
       data-gramm="false"
       data-lt-active="false"
-      // Exactly one line box: top-aligned and 1lh tall so the line keeps its
-      // height, with 2px of top padding balancing the 2px underline so the
-      // text sits where the line's text does. The side padding is cancelled by
-      // a negative margin, so the words around it stay put.
+      // The mark's exact box, so opening it moves no words: one line box
+      // (top-aligned, 1lh tall), the same 2px side padding cancelled by a
+      // negative margin, the same underline. Focus shows as the stronger
+      // tint and the caret, not a ring that would paint over the neighbors.
       className={cn(
-        "field-sizing-content -mx-1.5 inline-block h-[1lh] min-w-12 rounded-t-tight border-0 border-b-2 px-1.5 pt-0.5 align-top text-text",
-        FOCUS,
+        "field-sizing-content -mx-0.5 inline-block h-[1lh] min-w-2 rounded-row border-0 px-0.5 align-top text-text underline outline-none decoration-[1.5px] underline-offset-4 decoration-skip-ink-none",
         TONE[m.category].field,
       )}
     />

@@ -42,7 +42,7 @@ Elevated surfaces (popovers, menus, dialogs) get their edge from their shadow; n
 | `c-prep`, `c-accord`, `c-conj`, `c-ortho` | Mistake categories: Prepositions, Agreement, Conjugation, Spelling | Anything that isn't a category |
 | `brand` | The logo mark; the one `brand` button per page | Links, focus, selection, hover, the writing and correction screens |
 
-Category and status colors pass as 12px text on `bg-surface`. As backgrounds, use them only as tints: `bg-c-prep/14` for a highlight, `/24` on hover, nothing stronger, so all four categories stay equally loud. Pair every category color with its name or number; color alone doesn't identify it.
+Category and status colors pass as 12px text on `bg-surface`. As backgrounds, use them only as tints, nothing stronger than `/24`, so all four categories stay equally loud. Margin's marks rest quiet (`bg-c-prep/8`, underline at `/60`), go to `/14` on hover, and to `/24` with a full-color underline when focused or being fixed: that tint is their focus indicator, with no ring. Pair every category color with its name or number; color alone doesn't identify it.
 
 There is no blue "info" color and no red separate from `warn`. If you need one, ask; don't borrow `brand` or a category color.
 
