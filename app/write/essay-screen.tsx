@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import { AppBar, AppBarSkeleton } from "@/components/app-bar";
+import { TruncateWords } from "@/components/truncate-words";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -99,19 +100,17 @@ export function EssayScreen({
   return (
     <>
       <AppBar>
-        {/* py-3.5 gives Home's hit area room to reach 44px tall inside the
-            truncating line, which clips anything outside its box. */}
-        <p className="min-w-0 truncate py-3.5 text-label text-text-3">
+        {/* Only the title shrinks, ending on a whole word. py-3.5 gives Home's
+            hit area room to reach 44px tall. */}
+        <p className="flex min-w-0 flex-1 items-baseline gap-1 py-3.5 text-label text-text-3">
           <Link
             href="/home"
-            className="relative transition-colors before:absolute before:-inset-y-3.5 before:-right-2 before:left-0 hover:text-text"
+            className="relative shrink-0 transition-colors before:absolute before:-inset-y-3.5 before:-right-2 before:left-0 hover:text-text"
           >
             Home
-          </Link>{" "}
-          <span aria-hidden>/</span>{" "}
-          <span className="text-text" lang="fr">
-            {essayTitle({ title })}
-          </span>
+          </Link>
+          <span aria-hidden>/</span>
+          <TruncateWords text={essayTitle({ title })} lang="fr" className="text-text" />
         </p>
         <div className="flex shrink-0 items-center gap-3">
           <div className="flex h-4 items-center gap-3 text-label text-text-3">

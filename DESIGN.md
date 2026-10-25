@@ -26,6 +26,7 @@ Live reference: `/design/components` and `/design/type` in the dev server.
 4. **One primary action per view.** Two dark filled buttons means the screen has no next step. See the flowchart in [buttons.md](docs/design/buttons.md).
 5. **Brand blue at most once per page**, never in the writing or correction screens: blue there competes with the essay and the category colors.
 6. **Every control is labelled.** Icon-only buttons get `aria-label` and a Tooltip; inputs get a `<label>` or `aria-label`. A placeholder is never the label.
+7. **Shortened text ends on a whole word.** Any one-line text that can run out of room (titles, prompts, rules, list rows) uses `<TruncateWords text={…} />` from `components/truncate-words.tsx`, never Tailwind's `truncate` or `text-ellipsis`, which cut mid-word ("devrait-il dev…"). It takes all the room its row gives it (`flex-1`), keeps the full text for screen readers and on hover, and falls back to a character cut only for a single word too long to fit.
 
 ## Which component?
 
@@ -49,6 +50,8 @@ Built, in `app/home/` and `components/`:
 - **Essays** (`lib/essays.ts`): `useEssays()`, `useStartEssay()` (opens `/write?essay=<id>&new=1` on a blank page and saves nothing), `saveEssay()` / `removeEssay()`. An essay is saved only once its title or text has something in it (`hasWriting`), and removed again if cleared back to nothing; its draft goes too when the page closes. Starting an essay never asks anything first: no form, dialog or popover.
 
 - **`AppBar`** (`components/app-bar.tsx`): the sticky bar on the writing and correction screens. It spans the full window, never the essay's column, so the crumb on the left and the run details, clock, word count and correction progress on the right have room. Put it outside `<main>`; `AppBarSkeleton` holds its place while a screen loads. Home keeps its own bar inside `SidebarInset`.
+
+- **`TruncateWords`** (`components/truncate-words.tsx`): one line that ends on a whole word and "…" when it's too long (rule 7). In a flex row, give its row `min-w-0` and let it be the part that shrinks; put fixed parts (a "Home /" crumb, a date) beside it with `shrink-0`.
 
 Built, in `app/write/`:
 - **`EssayScreen`** (`essay-screen.tsx`): a user's essay at `/write?essay=<id>`: an "Untitled" title field (their prompt or any name; Enter goes to the body) and the `EssayEditor`. No exam framing. The sample exam runs (`/write?section=…&run=…`) still use `WritingScreen` with the timer.

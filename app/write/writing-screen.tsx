@@ -4,6 +4,7 @@ import { CheckIcon, ClockIcon, PauseIcon, PlayIcon } from "lucide-react";
 import { useState } from "react";
 
 import { AppBar } from "@/components/app-bar";
+import { TruncateWords } from "@/components/truncate-words";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -93,11 +94,11 @@ export function WritingScreen({ prompt, view = "write" }: { prompt: Prompt; view
   return (
     <TooltipProvider>
       <AppBar>
-        <p className="min-w-0 truncate text-label text-text-3">
-          Essays <span aria-hidden>/</span>{" "}
-          <span className="text-text" lang="fr">
-            {prompt.title}
-          </span>
+        {/* Only the prompt shrinks, ending on a whole word. */}
+        <p className="flex min-w-0 flex-1 items-baseline gap-1 text-label text-text-3">
+          <span className="shrink-0">Essays</span>
+          <span aria-hidden>/</span>
+          <TruncateWords text={prompt.title} lang="fr" className="text-text" />
         </p>
         <div className="flex shrink-0 items-center gap-3">
           <div className="flex h-4 items-center gap-3 text-label text-text-3">

@@ -3,6 +3,7 @@
 import { PenLineIcon } from "lucide-react";
 import Link from "next/link";
 
+import { TruncateWords } from "@/components/truncate-words";
 import { Button } from "@/components/ui/button";
 import {
   Sidebar,
@@ -58,9 +59,11 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
               essays.map((essay) => (
                 <SidebarMenuItem key={essay.id}>
                   <SidebarMenuButton render={<Link href={essayHref(essay.id)} />}>
-                    <span className={essay.title.trim() ? "truncate" : "truncate text-text-3"} lang="fr">
-                      {essayTitle(essay)}
-                    </span>
+                    <TruncateWords
+                      text={essayTitle(essay)}
+                      lang="fr"
+                      className={essay.title.trim() ? undefined : "text-text-3"}
+                    />
                   </SidebarMenuButton>
                 </SidebarMenuItem>
               ))

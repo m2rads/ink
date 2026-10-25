@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useMemo, useSyncExternalStore } from "react";
 
 import { AppSidebar } from "@/components/app-sidebar";
+import { TruncateWords } from "@/components/truncate-words";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { SidebarInset, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
@@ -100,12 +101,11 @@ function Recent({ essays }: { essays: EssayMeta[] | null }) {
               href={essayHref(e.id)}
               className="flex items-baseline gap-4 rounded-row py-3 transition-colors hover:text-text-2 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-solid focus-visible:outline-focus-ring"
             >
-              <span
-                className={e.title.trim() ? "min-w-0 flex-1 truncate font-serif text-body" : "min-w-0 flex-1 truncate font-serif text-body text-text-3"}
+              <TruncateWords
+                text={essayTitle(e)}
                 lang="fr"
-              >
-                {essayTitle(e)}
-              </span>
+                className={e.title.trim() ? "font-serif text-body" : "font-serif text-body text-text-3"}
+              />
               <span className="shrink-0 text-label text-text-3 tabular-nums">
                 {plural(e.words, "word")} · {shortDate(e.updatedAt)}
               </span>

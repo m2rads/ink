@@ -3,6 +3,7 @@
 import { RepeatIcon } from "lucide-react";
 import { createContext, use, useEffect, useLayoutEffect, useRef, useState } from "react";
 
+import { TruncateWords } from "@/components/truncate-words";
 import { Button } from "@/components/ui/button";
 import { Kbd } from "@/components/ui/kbd";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
@@ -724,14 +725,10 @@ function Note({ mistake: m }: { mistake: CorrectionMistake }) {
         )}
       >
         <span className={cn("w-5 shrink-0 text-caption font-semibold tabular-nums", tone.text)}>{m.number}</span>
-        <span
-          className={cn(
-            "min-w-0 flex-1 truncate text-label",
-            done ? "text-text-3 line-through decoration-border-strong" : "text-text",
-          )}
-        >
-          {m.rule}
-        </span>
+        <TruncateWords
+          text={m.rule}
+          className={cn("text-label", done ? "text-text-3 line-through decoration-border-strong" : "text-text")}
+        />
         {m.status !== "open" && (
           <span className={cn("shrink-0 text-caption", m.status === "fixed" ? "text-ok" : "text-text-3")}>
             {m.status === "fixed" && "✓ "}

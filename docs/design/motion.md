@@ -24,7 +24,7 @@ Is it a color, background or border change on hover/press/focus?
 | Paragraph drag: neighbors slide aside | 200ms | — | `ease-in-out` |
 | Paragraph drop: settles into its slot | 150ms | — | `ease-out` |
 | Paragraph moved by keyboard or menu | 200ms (both swap, FLIP) | — | `ease-in-out` |
-| Button press | 150ms to `scale-[0.96]` | 150ms | `ease-out` |
+| Button and toggle (filter chip) press | 150ms to `scale-[0.96]` | 150ms | `ease-out` |
 | Correction note opening / closing: card height (grid rows `0fr`↔`1fr`) and contents (fade, 4px lift) | 200ms | 150ms | `ease-out` in, `ease-in` out |
 | Margin notes below a resizing note | follow it frame by frame (no transition of their own) | — | the note's |
 | Margin notes after a filter change or a resolved mistake | 200ms | — | `ease-in-out` |
