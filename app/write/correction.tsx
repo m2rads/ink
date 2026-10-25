@@ -22,7 +22,10 @@ import type { MarkStatus } from "./review-store";
 //   <Correction mistakes={…} onCheck={…} onFix={…} onChange={…}>
 //     <Correction.Layout>
 //       {heading}
-//       <Correction.Header><Correction.Filters /></Correction.Header>
+//       <Correction.Header>
+//         {status}
+//         <Correction.Aside><Correction.Filters /></Correction.Aside>
+//       </Correction.Header>
 //       <Correction.Row>
 //         <Correction.Paragraph blockId={b.id} text={b.text} />
 //         <Correction.Notes blockId={b.id} />
@@ -32,10 +35,10 @@ import type { MarkStatus } from "./review-store";
 //
 // The text never moves for a note: where there's room to the right of the
 // essay, Layout places each paragraph's Notes there, beside their paragraph,
-// and a tall open note pushes only the notes below it. Header (status and
-// filters) stays above the essay. Without
-// room (phones, narrow windows) they fall back into the flow under each
-// paragraph. Read-only text with inline inputs, never contenteditable. State that
+// and a tall open note pushes only the notes below it. Header's status stays
+// above the essay; its Aside (the filters) heads the notes column. Without
+// room (phones, narrow windows) notes fall back into the flow under each
+// paragraph and the Aside under the status. Read-only text with inline inputs, never contenteditable. State that
 // outlives the view (status, attempts) belongs to the caller through
 // onFix/onChange; what's typed and the feedback on it live here.
 
@@ -327,8 +330,10 @@ const markId = (id: string) => `mark-${id}`;
 const noteBodyId = (id: string) => `note-${id}`;
 
 /** Chips that filter by category, each with what's left to resolve. Only categories in this review appear. */
+/** Small chips in the notes column; touch-sized above the essay, where phones and narrow windows see them. */
 function Filters({ className, ...props }: Omit<React.ComponentProps<"div">, "onChange" | "defaultValue">) {
   const { mistakes, filter, setFilter } = useCorrection();
+  const layout = use(LayoutContext);
   const present = CATEGORIES.filter((c) => mistakes.some((m) => m.category === c));
   if (present.length < 2) return null;
 
@@ -336,7 +341,7 @@ function Filters({ className, ...props }: Omit<React.ComponentProps<"div">, "onC
     <ToggleGroup
       multiple
       variant="outline"
-      size="lg"
+      size={layout === "margin" ? "sm" : "lg"}
       value={filter}
       onValueChange={(next) => setFilter(next as Category[])}
       aria-label="Filter mistakes by category"
@@ -377,11 +382,18 @@ const IN_MARGIN =
  * positions straight to the DOM (left, width, translateY) on every render and
  * resize, so placing notes never re-renders anything.
  */
+type MarginLayout = "margin" | "stacked";
+
+const LayoutContext = createContext<MarginLayout>("stacked");
+
 function Layout({ className, children, ...props }: React.ComponentProps<"div">) {
   // Subscribes to the correction, so notes are re-placed whenever one opens,
   // resolves or the filter changes.
   useCorrection();
   const ref = useRef<HTMLDivElement>(null);
+  // Mirrors data-layout for what renders differently in the margin (the
+  // filters' size). Set only when it flips, so placing never re-renders.
+  const [layout, setLayout] = useState<MarginLayout>("stacked");
   // Note cards whose height is animating (opening or closing). While any is,
   // the notes below follow it frame by frame instead of gliding on their own
   // transition, so they move in step with the card rather than trailing it.
@@ -390,7 +402,7 @@ function Layout({ className, children, ...props }: React.ComponentProps<"div">) 
   useLayoutEffect(() => {
     const root = ref.current;
     if (!root) return;
-    const place = () => placeMargin(root, growing.current.size === 0);
+    const place = () => setLayout(placeMargin(root, growing.current.size === 0));
     place();
     const observer = new ResizeObserver(place);
     observer.observe(root);
@@ -426,13 +438,13 @@ function Layout({ className, children, ...props }: React.ComponentProps<"div">) 
 
   return (
     <div ref={ref} data-slot="correction-layout" className={cn("group/margin relative", className)} {...props}>
-      {children}
+      <LayoutContext value={layout}>{children}</LayoutContext>
     </div>
   );
 }
 
 /** `glide`: notes slide to new places on their transition; otherwise they jump there (to follow a card's own animation). */
-function placeMargin(root: HTMLElement, glide = true) {
+function placeMargin(root: HTMLElement, glide = true): MarginLayout {
   const blocks = [...root.querySelectorAll<HTMLElement>("[data-margin-block]")];
   const box = root.getBoundingClientRect();
   const first = root.querySelector<HTMLElement>("[data-slot=correction-paragraph]");
@@ -443,7 +455,7 @@ function placeMargin(root: HTMLElement, glide = true) {
     root.dataset.layout = "stacked";
     root.style.minHeight = "";
     for (const b of blocks) b.style.cssText = "";
-    return;
+    return "stacked";
   }
 
   root.dataset.layout = "margin";
@@ -454,10 +466,16 @@ function placeMargin(root: HTMLElement, glide = true) {
   }
   let bottom = -Infinity;
   for (const b of blocks) {
+    // Notes line up with their paragraph, the header's Aside with its status.
     const paragraph = b
       .closest("[data-slot=correction-row]")
       ?.querySelector<HTMLElement>("[data-slot=correction-paragraph]");
-    const want = paragraph ? paragraph.getBoundingClientRect().top - box.top : 0;
+    const status = b.closest("[data-slot=correction-header]")?.firstElementChild;
+    const want = paragraph
+      ? paragraph.getBoundingClientRect().top - box.top
+      : status && status !== b
+        ? besideFirstLine(b, status) - box.top
+        : 0;
     const height = b.offsetHeight;
     const y = height === 0 ? want : Math.max(want, bottom + STACK);
     if (!glide) b.style.transition = "none";
@@ -471,11 +489,41 @@ function placeMargin(root: HTMLElement, glide = true) {
   }
   // Notes can run past the last paragraph; keep them inside the page.
   root.style.minHeight = bottom > 0 ? `${bottom}px` : "";
+  return "margin";
 }
 
-/** Above the essay: the review's status and the filters. */
+/**
+ * Where `aside` goes so its first row (a row of chips, a line of the trace)
+ * is centered on the first line of `status` text, a 28px chip beside an 18px
+ * line. Its offset inside the aside is relative, so a translate doesn't skew it.
+ */
+function besideFirstLine(aside: HTMLElement, status: Element) {
+  const range = document.createRange();
+  range.selectNodeContents(status);
+  const line = range.getClientRects()[0] ?? status.getBoundingClientRect();
+  const row = aside.firstElementChild?.firstElementChild ?? aside;
+  const { top, height } = row.getBoundingClientRect();
+  return line.top + line.height / 2 - (top - aside.getBoundingClientRect().top) - height / 2;
+}
+
+/** Above the essay: the review's status, and an Aside. */
 function Header({ className, ...props }: React.ComponentProps<"div">) {
-  return <div className={cn("mb-7 grid grid-cols-1 justify-items-start gap-4 font-sans", className)} {...props} />;
+  return (
+    <div
+      data-slot="correction-header"
+      className={cn("mb-7 grid grid-cols-1 justify-items-start gap-4 font-sans", className)}
+      {...props}
+    />
+  );
+}
+
+/**
+ * The header's part that heads the notes column, level with the status, when
+ * there's room (the filters, or the review's progress while it runs); under
+ * the status otherwise. Notes start below it.
+ */
+function Aside({ className, ...props }: React.ComponentProps<"div">) {
+  return <div data-margin-block="aside" className={cn("empty:hidden", IN_MARGIN, className)} {...props} />;
 }
 
 /** One paragraph and its notes; the notes go to the margin, or under the paragraph without room. */
@@ -870,4 +918,4 @@ function Rich({ text }: { text: string }) {
   );
 }
 
-export const Correction = Object.assign(CorrectionRoot, { Layout, Header, Filters, Row, Paragraph, Notes });
+export const Correction = Object.assign(CorrectionRoot, { Layout, Header, Aside, Filters, Row, Paragraph, Notes });

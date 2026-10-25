@@ -22,7 +22,7 @@ Props that change the look: `variant` (`default`, `outline`), `size` (`default`,
 
 - `variant="outline"`: the default for filter chips. Unpressed chips are outlined with `text-text-2`; pressed ones fill with `bg-sunken`, so state reads without color.
 - `variant="default"`: toolbars of formatting-style toggles, where outlines would be noise.
-- Sizes: `default` 32px, `sm` 28px, `lg` 36px. Chips beside 36px buttons use `lg`; inside notes use `sm`. On touch screens every size's hit area grows to 44px (vertically only in a joined, `spacing={0}` group); with `spacing={2}`, only `lg` chips stay clear of each other, so use `lg` for touch-heavy filters.
+- Sizes: `default` 32px, `sm` 28px, `lg` 36px. Chips beside 36px buttons use `lg`; inside notes use `sm`. Margin's category filters are `sm` in the notes column (wide windows, mouse first) and `lg` above the essay when notes stack (phones). On touch screens every size's hit area grows to 44px (vertically only in a joined, `spacing={0}` group); with `spacing={2}`, only `lg` chips stay clear of each other, so use `lg` for touch-heavy filters.
 - `spacing={2}` (default) separates chips; `spacing={0}` joins them into one segmented pill.
 - Every toggle has a pointer cursor (global, as for all buttons) and presses to 96% (150ms `ease-out`, like buttons); joined `spacing={0}` groups don't scale. Built in: don't add `cursor-*` or `active:` styles yourself.
 

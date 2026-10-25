@@ -224,12 +224,16 @@ export function ReviewView({
               <p className="text-label text-text-3" aria-live="polite">
                 Reviewing your essay…
               </p>
-              <ReviewTrace paragraphs={blocks.filter((b) => b.text.trim()).length} found={flow.found} />
+              <Correction.Aside>
+                <ReviewTrace paragraphs={blocks.filter((b) => b.text.trim()).length} found={flow.found} />
+              </Correction.Aside>
             </>
           ) : (
             <>
               <Summary mistakes={mistakes} />
-              <Correction.Filters />
+              <Correction.Aside>
+                <Correction.Filters />
+              </Correction.Aside>
             </>
           )}
         </Correction.Header>
@@ -247,8 +251,8 @@ export function ReviewView({
 }
 
 /**
- * What the check is doing, in the filter chips' place and their height, so
- * the essay doesn't shift when they arrive. Only what really happens: the
+ * What the check is doing, in the filter chips' place (and, above the essay,
+ * their height), so the essay doesn't shift when they arrive. Only what really happens: the
  * model reads the whole essay first, then writes the mistakes out one by one.
  */
 function ReviewTrace({ paragraphs, found }: { paragraphs: number; found: number }) {
