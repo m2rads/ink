@@ -42,8 +42,8 @@ export function ContributionGraph({
 
   const summary =
     year.total === 0
-      ? "No essays in the last year"
-      : `${plural(year.total, "essay")} and ${plural(year.words, "word")} in the last year`;
+      ? "No essays in the past year"
+      : `${plural(year.total, "essay")}, ${plural(year.words, "word")} in the past year`;
 
   return (
     <figure className={cn("min-w-0", className)}>

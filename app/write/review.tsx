@@ -27,7 +27,7 @@ import {
 // new one; on changed text, a new review replaces the old.
 //
 // A failed review never takes the essay's place on screen: it's a toast with
-// Try again, and the screen goes back to the writing view (onFailed).
+// Retry, and the screen goes back to the writing view (onFailed).
 
 export type ReviewFlow = {
   review: Review | null | undefined;
@@ -39,7 +39,7 @@ export type ReviewFlow = {
 type FlowOptions = {
   /** Leave the review view: there's nothing to show. */
   onFailed: () => void;
-  /** The toast's Try again: reopen the review view and run it again. */
+  /** The toast's Retry: reopen the review view and run it again. */
   onRetry: () => void;
 };
 
@@ -52,7 +52,7 @@ export function useReviewFlow(
   const review = useReview(draftId);
   const [status, setStatus] = useState<ReviewFlow["status"]>("idle");
 
-  // The toast outlives this render; Try again must review the text as it is
+  // The toast outlives this render; Retry must review the text as it is
   // when pressed, not as it was when the review failed.
   const latest = useRef({ onFailed, onRetry });
   useEffect(() => {
@@ -73,8 +73,8 @@ export function useReviewFlow(
       latest.current.onFailed();
       toast.error("Review failed", {
         id: `review-failed:${draftId}`,
-        description: "Your essay is unchanged. Check your connection and try again.",
-        action: { label: "Try again", onClick: () => latest.current.onRetry() },
+        description: "Your essay is unchanged.",
+        action: { label: "Retry", onClick: () => latest.current.onRetry() },
       });
     }
   }
@@ -139,13 +139,13 @@ export function useReviewProgress(flow: ReviewFlow, blocks: Block[] | null) {
   }, [flow.review, flow.status, blocks]);
 }
 
-/** "4 of 13 resolved" and a bar, for the app bar. */
+/** "4 of 13 done" and a bar, for the app bar. */
 export function ReviewProgress({ done, total }: { done: number; total: number }) {
-  if (total === 0) return <span>No mistakes found</span>;
+  if (total === 0) return <span>No mistakes</span>;
   return (
     <span className="flex items-center gap-2">
       <span>
-        {done} of {total} resolved
+        {done} of {total} done
       </span>
       <Progress value={(done / total) * 100} aria-label="Mistakes resolved" className="w-16 max-sm:hidden" />
     </span>
@@ -208,7 +208,7 @@ export function ReviewView({
           {checking ? (
             <>
               <p className="text-label text-text-3" aria-live="polite">
-                Reviewing prepositions, agreement, conjugation and spelling. This usually takes under a minute.
+                Reviewing your essay…
               </p>
               {/* Shaped like the filter chips that replace it, so the essay doesn't shift when they arrive. */}
               <Skeleton className="h-9 w-72 max-w-full rounded-full" aria-hidden />
@@ -240,9 +240,9 @@ function Summary({ mistakes }: { mistakes: CorrectionMistake[] }) {
   if (mistakes.length === 0) {
     return (
       <div className="w-full rounded-card border bg-surface p-4">
-        <h2 className="text-title">No mistakes found</h2>
+        <h2 className="text-title">No mistakes</h2>
         <p className="mt-1.5 text-ui text-text-2">
-          Nothing to fix in prepositions, agreement, conjugation or spelling. Ink only checks those four.
+          Ink checks prepositions, agreement, conjugation and spelling.
         </p>
       </div>
     );
@@ -251,16 +251,15 @@ function Summary({ mistakes }: { mistakes: CorrectionMistake[] }) {
     return (
       <p className="text-label text-text-3">
         <span className="pointer-coarse:hidden">Click</span>
-        <span className="hidden pointer-coarse:inline">Tap</span> a highlight or a note to fix it in place.
-        {open < mistakes.length && <span className="tabular-nums"> {open} left.</span>}
+        <span className="hidden pointer-coarse:inline">Tap</span> a highlight to fix it.
       </p>
     );
   }
   return (
     <div className="w-full rounded-card border bg-surface p-4">
-      <h2 className="text-title">All {mistakes.length} mistakes resolved</h2>
+      <h2 className="text-title">All {mistakes.length} done</h2>
       <p className="mt-1.5 text-ui text-text-2 tabular-nums">
-        {count("fixed")} fixed by you, {count("revealed")} with the answer shown.
+        {count("fixed")} fixed by you · {count("revealed")} {count("revealed") === 1 ? "answer" : "answers"} shown
       </p>
     </div>
   );

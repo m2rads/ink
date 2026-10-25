@@ -47,7 +47,7 @@ export type Prompt = {
   minWords: number;
 };
 
-const RUN_LABEL = { practice: "Practice run", mock: "Mock run" } as const;
+const RUN_LABEL = { practice: "Practice", mock: "Mock" } as const;
 
 export function WritingScreen({ prompt, view = "write" }: { prompt: Prompt; view?: ViewMode }) {
   // Practice and mock runs of the same prompt keep separate drafts and clocks.
@@ -137,7 +137,7 @@ export function WritingScreen({ prompt, view = "write" }: { prompt: Prompt; view
             </Button>
           ) : (
             <Button variant="outline" size="sm" onClick={() => setMode("write")}>
-              Back to essay
+              Back
             </Button>
           )}
         </div>
@@ -146,9 +146,9 @@ export function WritingScreen({ prompt, view = "write" }: { prompt: Prompt; view
       <AlertDialog open={confirmEnd} onOpenChange={setConfirmEnd}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Hand in your mock run?</AlertDialogTitle>
+            <AlertDialogTitle>Hand in now?</AlertDialogTitle>
             <AlertDialogDescription>
-              The clock stops and your essay locks as it is, like handing it in at the exam. Then Ink reviews it.
+              The clock stops and your essay locks, as in the exam.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -160,7 +160,7 @@ export function WritingScreen({ prompt, view = "write" }: { prompt: Prompt; view
                 review();
               }}
             >
-              Hand in and review
+              Hand in
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -212,7 +212,7 @@ export function WritingScreen({ prompt, view = "write" }: { prompt: Prompt; view
                 onValueChange={onValueChange}
                 readOnly={locked}
                 aria-label="Your essay"
-                placeholder="Écrivez votre réponse ici…"
+                placeholder="Écrivez ici…"
                 autoFocus
                 className="max-w-prose min-h-96 pb-40"
               />
@@ -291,7 +291,7 @@ function ExamClock({
           >
             {clock.status === "paused" ? <PlayIcon /> : <PauseIcon />}
           </TooltipTrigger>
-          <TooltipContent>{clock.status === "paused" ? "Resume clock" : "Pause clock"}</TooltipContent>
+          <TooltipContent>{clock.status === "paused" ? "Resume" : "Pause"}</TooltipContent>
         </Tooltip>
       )}
     </span>
@@ -303,7 +303,7 @@ function ExamClock({
 function TimeAnnouncer({ clock, mock }: { clock: Clock; mock: boolean }) {
   let message = "";
   if (clock && clock.status !== "idle") {
-    if (clock.status === "over" && clock.left > 0) message = "Mock run handed in. Your essay is locked.";
+    if (clock.status === "over" && clock.left > 0) message = "Handed in. Your essay is locked.";
     else if (clock.left <= 0) message = mock ? "Time’s up. Your essay is locked." : "Time’s up. You can keep writing.";
     else if (clock.left <= 60_000) message = "1 minute left.";
     else if (clock.left <= WARN_AT_MS) message = "5 minutes left.";
@@ -320,11 +320,10 @@ function MockStart({ minutes, onStart }: { minutes: number; onStart: () => void 
     <div className="max-w-prose rounded-card border bg-surface p-5">
       <h2 className="text-title">Mock run</h2>
       <p className="mt-2 text-ui text-text-2">
-        {minutes} minutes with no pause and no dictionary. The clock starts when you press Start and keeps running if
-        you leave this page. At 0:00 your essay locks as it is.
+        {minutes} minutes, no pauses, no dictionary. The clock keeps running if you leave, and your essay locks at 0:00.
       </p>
       <Button className="mt-4" onClick={onStart}>
-        Start mock run
+        Start
       </Button>
     </div>
   );
@@ -347,13 +346,13 @@ function RunNote({
   if (status === "running") return null;
 
   if (status === "idle") {
-    return <p className="mb-6 text-caption text-text-3">The {minutes}-minute clock starts when you start typing.</p>;
+    return <p className="mb-6 text-caption text-text-3">The {minutes}-minute clock starts when you type.</p>;
   }
 
   if (status === "paused") {
     return (
       <Note>
-        <span>Paused. Resume the clock to keep writing.</span>
+        <span>Paused</span>
         <Button variant="secondary" size="xs" onClick={onResume} className="ml-auto">
           Resume
         </Button>
@@ -366,10 +365,10 @@ function RunNote({
       <ClockIcon className="size-4 shrink-0 text-warn" aria-hidden />
       <span>
         {handedIn
-          ? "You handed in this mock run. Your essay is locked as you left it."
+          ? "Handed in. Your essay is locked."
           : mock
-            ? "Time’s up. Your essay is locked as you left it."
-            : "Time’s up. In the exam your essay would be collected now; keep writing to finish this practice."}
+            ? "Time’s up. Your essay is locked."
+            : "Time’s up. In the exam, you’d stop here."}
       </span>
     </Note>
   );

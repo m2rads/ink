@@ -62,7 +62,7 @@ export type CorrectionMistake = {
 
 export type Verdict = { correct: boolean; feedback: string };
 
-type Feedback = { kind: "unchanged" } | { kind: "wrong"; attempt: string; text: string } | { kind: "failed" };
+type Feedback = { kind: "unchanged" } | { kind: "wrong"; text: string } | { kind: "failed" };
 
 type MistakePatch = Partial<Pick<CorrectionMistake, "status" | "attempts" | "hinted">>;
 
@@ -206,7 +206,7 @@ function CorrectionRoot({
 
   function announceResolved(how: string) {
     const done = mistakes.filter((m) => resolved(m.status)).length + 1;
-    setAnnouncement(`${how}. ${done} of ${mistakes.length} resolved.`);
+    setAnnouncement(`${how}. ${done} of ${mistakes.length} done.`);
   }
 
   const ctx: ContextValue = {
@@ -267,7 +267,7 @@ function CorrectionRoot({
           onFix(id, attempt.trim(), "fixed");
           advance(id);
         } else {
-          say(id, { kind: "wrong", attempt: attempt.trim(), text: verdict.feedback });
+          say(id, { kind: "wrong", text: verdict.feedback });
           onChange(id, { attempts: m.attempts + 1 });
           shake(inputs.current.get(id));
           inputs.current.get(id)?.focus({ preventScroll: true });
@@ -283,7 +283,7 @@ function CorrectionRoot({
       const m = byId(id);
       if (!m) return;
       say(id, undefined);
-      announceResolved("Answer shown");
+      announceResolved("Shown");
       onFix(id, m.fix, "revealed");
       advance(id);
     },
@@ -581,7 +581,7 @@ function Mark({ mistake: m }: { mistake: CorrectionMistake }) {
 function Done({ mistake: m, phrase }: { mistake: CorrectionMistake; phrase: string }) {
   return (
     <span
-      title={m.status === "fixed" ? `You fixed “${m.wrong}”` : `Answer shown. You wrote “${m.wrong}”`}
+      title={m.status === "fixed" ? `Was “${m.wrong}”` : `Shown. Was “${m.wrong}”`}
       className={cn(
         "underline decoration-1 underline-offset-4",
         m.status === "fixed" ? "decoration-ok" : "decoration-text-3 decoration-dotted",
@@ -691,7 +691,7 @@ function Notes({ blockId, className, ...props }: React.ComponentProps<"div"> & {
   );
 }
 
-const STATUS_LABEL: Record<MarkStatus, string> = { open: "", fixed: "Fixed", revealed: "Answer shown", skipped: "Skipped" };
+const STATUS_LABEL: Record<MarkStatus, string> = { open: "", fixed: "Fixed", revealed: "Shown", skipped: "Skipped" };
 
 function Note({ mistake: m }: { mistake: CorrectionMistake }) {
   const { activeId, select, check, reveal, skip, hint, pendingId, close, inputs, focusNext } = useCorrection();
@@ -781,11 +781,10 @@ function Note({ mistake: m }: { mistake: CorrectionMistake }) {
               <p className="mt-3 flex items-baseline gap-1.5 text-label text-text-2">
                 <RepeatIcon className="size-3.5 shrink-0 self-center" aria-hidden />
                 <span>
-                  You’ve made{" "}
                   <span className="font-medium text-text">
                     {m.seen} {m.category} {m.seen === 1 ? "mistake" : "mistakes"}
                   </span>{" "}
-                  in earlier essays.
+                  in earlier essays
                 </span>
               </p>
             )}
@@ -813,7 +812,7 @@ function Note({ mistake: m }: { mistake: CorrectionMistake }) {
             </div>
             {/* Touch keyboards have no Enter key to name; their Done key checks too. */}
             <p className="mt-3 text-caption text-text-3 pointer-coarse:hidden">
-              Rewrite the highlighted words in your text, then press <Kbd>Enter</Kbd>
+              <Kbd>Enter</Kbd> to check
             </p>
           </div>
         </div>
@@ -839,11 +838,11 @@ function FeedbackFor({ mistake: m }: { mistake: CorrectionMistake }) {
     <div aria-live="polite">
       {fb && (
         <p className="mt-3 rounded-r-row border-l-2 border-warn bg-warn/10 px-2.5 py-2 text-ui text-pretty text-text">
-          {fb.kind === "unchanged" && "That’s still your original text. Change it in place, then check again."}
-          {fb.kind === "failed" && "Couldn’t check that. Try again."}
+          {fb.kind === "unchanged" && "That’s still the original."}
+          {fb.kind === "failed" && "Couldn’t check. Try again."}
           {fb.kind === "wrong" && (
             <>
-              Not yet: <span lang="fr">“{fb.attempt}”</span> isn’t right. {fb.text && <Rich text={fb.text} />}
+              Not yet. {fb.text && <Rich text={fb.text} />}
             </>
           )}
         </p>

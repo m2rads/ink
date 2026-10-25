@@ -38,6 +38,7 @@ If you hesitate about whether something is an error, it is not one. An essay wit
 - Keep the span as short as the correction allows: "dépend sur le", not the whole sentence.
 - When one fix needs two places changed (a subject and its verb far apart), mark the shorter span that contains both.
 - Report mistakes in the order they appear.
+- Write the notes tersely: the fewest words that still teach the rule. Less is more.
 
 # Examples
 

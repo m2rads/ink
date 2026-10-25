@@ -39,7 +39,7 @@ Reference: `docs/prototypes/correction-loop.html`. Open it in a browser; `?v=3` 
 Explored in a throwaway `/proto/home` with four directions; the pick is a mix of two.
 
 - **Sidebar:** shadcn's Sidebar (`collapsible="offcanvas"`), stripped to the logo, a New essay button under it, and the essays as one flat list, newest first. No dashboard nav, documents, settings or user footer.
-- **Main:** the streak and full-year contribution graph from *Rail*, with its one brand-blue "Write an essay" button; under them the *Recent* list from *Studio*.
+- **Main:** the streak and full-year contribution graph from *Rail*, with its one brand-blue "New essay" button; under them the *Recent* list from *Studio*.
 - **New essay:** opens the editor on a new, empty essay. No form, popover or dialog: prompts are the user's own, and an empty title and body show what to do. Nothing is saved until something is written (decided 2026-10-24): blank essays never reach the sidebar, Recent or the streak, and an essay cleared back to nothing is removed.
 - Rejected:
   - **Studio** as a whole: a stats row and month-folder tree; more chrome than the page needs, and the graph was one panel among many.
@@ -60,7 +60,7 @@ Explored in a throwaway `/proto/home` with four directions; the pick is a mix of
 
 ### Review (decided 2026-10-24)
 
-- **On demand:** a Review button in the app bar, any time. The editor can't know when writing is done. It swaps the editor for Margin; "Edit essay" swaps back.
+- **On demand:** a Review button in the app bar, any time. The editor can't know when writing is done. It swaps the editor for Margin; "Edit" swaps back (exam runs: "Back").
 - **Mock runs hand in:** in a running mock run, Review first asks to hand the essay in (the clock stops, the essay locks), since feedback mid-run would break exam conditions.
 - **One review per essay:** reviewing unchanged text reopens the last review (no new call); reviewing changed text replaces it, because edits move the text and old marks would point at the wrong words. Fixes made in the review are written into the essay in place and don't count as changes.
 - **Memory counts each essay once**, by category, from its latest review, so reviewing three times doesn't inflate "you've made N … mistakes in earlier essays".

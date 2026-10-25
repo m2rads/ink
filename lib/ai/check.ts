@@ -55,7 +55,7 @@ const fixVerdictSchema = z.object({
   correct: z.boolean(),
   feedback: z
     .string()
-    .describe("Empty when correct. Otherwise one short sentence in English on what's still wrong, without the answer."),
+    .describe("Empty when correct. Otherwise a few words of English on what's still wrong, without the answer."),
 });
 
 export type FixVerdict = z.infer<typeof fixVerdictSchema> & { arm: string; model: string };

@@ -54,7 +54,7 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
                 </SidebarMenuItem>
               ))
             ) : essays.length === 0 ? (
-              <p className="px-2 py-1.5 text-label text-text-3">No essays yet.</p>
+              <p className="px-2 py-1.5 text-label text-text-3">No essays yet</p>
             ) : (
               essays.map((essay) => (
                 <SidebarMenuItem key={essay.id}>

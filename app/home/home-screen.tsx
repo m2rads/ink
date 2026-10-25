@@ -44,7 +44,7 @@ export function HomeScreen() {
               {ready ? <Streak activity={activity} today={today} /> : <Skeleton className="h-16 w-64" />}
               <Button variant="brand" size="lg" onClick={startEssay}>
                 <PenLineIcon />
-                Write an essay
+                New essay
               </Button>
             </div>
 
@@ -73,7 +73,7 @@ function Streak({ activity, today }: { activity: Activity[]; today: string }) {
         <span className="text-title text-text-2">day streak</span>
       </p>
       <p className="mt-2 text-ui text-text-3">
-        {wroteToday ? "You wrote today." : streak > 0 ? "Write today to keep it going." : "Write today to start a streak."}
+        {wroteToday ? "Done for today" : streak > 0 ? "Write today to keep it" : "Write today to start one"}
       </p>
     </div>
   );
@@ -86,7 +86,7 @@ function Recent({ essays }: { essays: EssayMeta[] | null }) {
       <section className="mt-12 rounded-card border border-dashed p-8 text-center">
         <h2 className="text-title">Write your first essay</h2>
         <p className="mx-auto mt-1 max-w-prose text-ui text-text-2">
-          Start with Write an essay. Each essay you write fills a day in the graph above.
+          Each one fills a day in the graph.
         </p>
       </section>
     );

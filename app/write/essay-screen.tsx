@@ -65,11 +65,11 @@ export function EssayScreen({
   if (!essay && !editable) {
     return (
       <main className="mx-auto grid max-w-prose gap-2 px-4 pt-24 text-center">
-        <h1 className="text-title">This essay isn’t on this device</h1>
+        <h1 className="text-title">Not on this device</h1>
         <p className="text-ui text-text-2">
           Essays are saved in this browser for now.{" "}
           <Link href="/home" className="text-text underline decoration-border-strong underline-offset-4 hover:decoration-current">
-            Back to Home
+            Home
           </Link>
         </p>
       </main>
@@ -130,7 +130,7 @@ export function EssayScreen({
             </Button>
           ) : (
             <Button variant="outline" size="sm" onClick={() => setMode("write")}>
-              Edit essay
+              Edit
             </Button>
           )}
         </div>
@@ -170,7 +170,7 @@ export function EssayScreen({
             value={blocks}
             onValueChange={onBodyChange}
             aria-label="Your essay"
-            placeholder="Écrivez votre texte ici…"
+            placeholder="Écrivez ici…"
             autoFocus={!isNew}
             onExitTop={focusTitle}
             className="mt-6 max-w-prose min-h-96 pb-40"

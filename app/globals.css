@@ -315,6 +315,14 @@
     touch-action: manipulation;
   }
 
+  /* Everything pressable shows that it is. Tailwind's preflight resets
+     buttons to the default arrow; disabled ones keep it, and utilities
+     (cursor-grab on the paragraph grip) still win. */
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]) {
+    cursor: pointer;
+  }
+
   html {
     font-synthesis: none;
     -webkit-text-size-adjust: 100%;

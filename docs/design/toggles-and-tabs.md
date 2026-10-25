@@ -24,7 +24,7 @@ Props that change the look: `variant` (`default`, `outline`), `size` (`default`,
 - `variant="default"`: toolbars of formatting-style toggles, where outlines would be noise.
 - Sizes: `default` 32px, `sm` 28px, `lg` 36px. Chips beside 36px buttons use `lg`; inside notes use `sm`. On touch screens every size's hit area grows to 44px (vertically only in a joined, `spacing={0}` group); with `spacing={2}`, only `lg` chips stay clear of each other, so use `lg` for touch-heavy filters.
 - `spacing={2}` (default) separates chips; `spacing={0}` joins them into one segmented pill.
-- Every toggle has a pointer cursor and presses to 96% (150ms `ease-out`, like buttons); joined `spacing={0}` groups don't scale. Built in: don't add `cursor-*` or `active:` styles yourself.
+- Every toggle has a pointer cursor (global, as for all buttons) and presses to 96% (150ms `ease-out`, like buttons); joined `spacing={0}` groups don't scale. Built in: don't add `cursor-*` or `active:` styles yourself.
 
 Always pass `multiple` for filters and an `aria-label` describing what is filtered. A category chip carries a dot in its category color (`bg-c-prep`…), never a colored chip background, so the four categories stay equally loud.
 

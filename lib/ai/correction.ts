@@ -24,13 +24,17 @@ export const reportedMistakeSchema = z.object({
   category: z.enum(CATEGORIES),
   fix: z.string().describe("The best correction of exactly that span."),
   accept: z.array(z.string()).describe("Every correct rewrite of the span a teacher would accept, including fix."),
-  rule: z.string().describe("The rule in under 60 characters, in English, e.g. “Dépendre always takes de”."),
+  rule: z
+    .string()
+    .describe("The rule in under 40 characters, in English, with no final period, e.g. “Dépendre takes de”."),
   explain: z
     .string()
     .describe(
-      "One or two sentences in English on why it's wrong, for this learner. Wrap French words in *asterisks*. Never give away the fix.",
+      "One short sentence in English on why it's wrong, for this learner. Wrap French words in *asterisks*. Never give away the fix.",
     ),
-  hint: z.string().describe("A nudge toward the fix that doesn't give it away, in English. Wrap French in *asterisks*."),
+  hint: z
+    .string()
+    .describe("A few words that point toward the fix without giving it away, in English. Wrap French in *asterisks*."),
 });
 
 export const essayReportSchema = z.object({ mistakes: z.array(reportedMistakeSchema) });
