@@ -4,11 +4,14 @@ import { z } from "zod";
 
 import { checkEssay, judgeFix, type EssayCheck, type FixVerdict } from "@/lib/ai/check";
 import { matchesAccepted } from "@/lib/ai/correction";
+import { LANGUAGE_CODES } from "@/lib/languages";
+import { translate } from "@/lib/translate";
 
-// The correction loop's two server functions. They're public POST endpoints,
-// so input is validated and capped here; there's no account to check yet.
+// The correction loop's two server functions, and the dictionary's lookup.
+// They're public POST endpoints, so input is validated and capped here;
+// there's no account to check yet.
 // TODO: rate-limit per visitor before Ink is public, or anyone can spend the
-// AI Gateway budget.
+// AI Gateway and Google Translate budgets.
 
 const essaySchema = z.object({
   reviewId: z.string().min(1).max(100),
@@ -54,4 +57,20 @@ export async function checkFix(input: z.input<typeof fixSchema>): Promise<FixVer
   const { accept, ...fix } = fixSchema.parse(input);
   if (matchesAccepted(fix.attempt, accept)) return { correct: true, feedback: "", arm: "accepted", model: "none" };
   return judgeFix(fix);
+}
+
+const lookupSchema = z.object({
+  text: z.string().trim().min(1).max(100),
+  /** The learner's language (LANGUAGES), the other side being French. */
+  lang: z.enum(LANGUAGE_CODES),
+  direction: z.enum(["to-fr", "from-fr"]),
+});
+
+export type Lookup = { translation: string };
+
+/** The dictionary's lookup: one translation, from Google Translate. */
+export async function lookUp(input: z.input<typeof lookupSchema>): Promise<Lookup> {
+  const { text, lang, direction } = lookupSchema.parse(input);
+  const [from, to] = direction === "to-fr" ? [lang, "fr"] : ["fr", lang];
+  return { translation: await translate({ text, from, to }) };
 }

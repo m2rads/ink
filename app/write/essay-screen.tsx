@@ -13,6 +13,7 @@ import { cn } from "@/lib/utils";
 
 import { countWords, type Block } from "./blocks";
 import { caretX, isOnLastLine, offsetAtX } from "./caret";
+import { Dictionary } from "./dictionary";
 import { removeDraft, useDraft } from "./draft-store";
 import { EssayEditor } from "./essay-editor";
 import { ReviewProgress, ReviewView, useReviewFlow, useReviewProgress, useViewMode, type ViewMode } from "./review";
@@ -98,8 +99,9 @@ export function EssayScreen({
   }
 
   return (
-    <>
+    <Dictionary enabled={mode === "write"}>
       <AppBar>
+        <Dictionary.Trigger className="-ml-2" />
         {/* Only the title shrinks, ending on a whole word. py-3.5 gives Home's
             hit area room to reach 44px tall. */}
         <p className="flex min-w-0 flex-1 items-baseline gap-1 py-3.5 text-label text-text-3">
@@ -158,7 +160,8 @@ export function EssayScreen({
           />
         </main>
       ) : (
-        <main className="mx-auto w-full max-w-3xl px-4 sm:px-10">
+        <main className="relative mx-auto w-full max-w-3xl px-4 sm:px-10">
+          <Dictionary.Margin />
           <TitleField
             value={title}
             autoFocus={isNew}
@@ -177,7 +180,7 @@ export function EssayScreen({
           />
         </main>
       )}
-    </>
+    </Dictionary>
   );
 }
 

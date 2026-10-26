@@ -22,6 +22,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { cn } from "@/lib/utils";
 
 import { countWords, type Block } from "./blocks";
+import { Dictionary } from "./dictionary";
 import { useDraft } from "./draft-store";
 import { EssayEditor } from "./essay-editor";
 import { ReviewProgress, ReviewView, useReviewFlow, useReviewProgress, useViewMode, type ViewMode } from "./review";
@@ -93,90 +94,117 @@ export function WritingScreen({ prompt, view = "write" }: { prompt: Prompt; view
 
   return (
     <TooltipProvider>
-      <AppBar>
-        {/* Only the prompt shrinks, ending on a whole word. */}
-        <p className="flex min-w-0 flex-1 items-baseline gap-1 text-label text-text-3">
-          <span className="shrink-0">Essays</span>
-          <span aria-hidden>/</span>
-          <TruncateWords text={prompt.title} lang="fr" className="text-text" />
-        </p>
-        <div className="flex shrink-0 items-center gap-3">
-          <div className="flex h-4 items-center gap-3 text-label text-text-3">
-            {mode === "review" && progress && (
-              <>
-                <ReviewProgress {...progress} />
-                <Separator orientation="vertical" className="max-sm:hidden" />
-              </>
+      {/* Practice runs only: a mock run is exam conditions, with no help. */}
+      <Dictionary enabled={!mock && mode === "write"}>
+        <AppBar>
+          <Dictionary.Trigger className="-ml-2" />
+          {/* Only the prompt shrinks, ending on a whole word. */}
+          <p className="flex min-w-0 flex-1 items-baseline gap-1 text-label text-text-3">
+            <span className="shrink-0">Essays</span>
+            <span aria-hidden>/</span>
+            <TruncateWords text={prompt.title} lang="fr" className="text-text" />
+          </p>
+          <div className="flex shrink-0 items-center gap-3">
+            <div className="flex h-4 items-center gap-3 text-label text-text-3">
+              {mode === "review" && progress && (
+                <>
+                  <ReviewProgress {...progress} />
+                  <Separator orientation="vertical" className="max-sm:hidden" />
+                </>
+              )}
+              <span className="max-sm:hidden">Section {prompt.section}</span>
+              <Separator orientation="vertical" className="max-sm:hidden" />
+              <span className="max-sm:hidden">{RUN_LABEL[prompt.run]}</span>
+              <Separator orientation="vertical" className="max-sm:hidden" />
+              <span className={cn(mode === "review" && "max-sm:hidden")}>
+                <ExamClock
+                  clock={clock}
+                  durationMs={durationMs}
+                  canPause={!mock}
+                  onPause={() => pauseTimer(runId)}
+                  onResume={() => resumeTimer(runId)}
+                />
+              </span>
+              <Separator orientation="vertical" className={cn(mode === "review" && "max-sm:hidden")} />
+              <span className={cn(mode === "review" && "max-sm:hidden")}>
+                <WordCount count={blocks ? words : null} min={prompt.minWords} />
+              </span>
+            </div>
+            {mode === "write" ? (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={onReview}
+                disabled={words === 0 || (mock && clock?.status === "idle")}
+              >
+                Review
+              </Button>
+            ) : (
+              <Button variant="outline" size="sm" onClick={() => setMode("write")}>
+                Back
+              </Button>
             )}
-            <span className="max-sm:hidden">Section {prompt.section}</span>
-            <Separator orientation="vertical" className="max-sm:hidden" />
-            <span className="max-sm:hidden">{RUN_LABEL[prompt.run]}</span>
-            <Separator orientation="vertical" className="max-sm:hidden" />
-            <span className={cn(mode === "review" && "max-sm:hidden")}>
-              <ExamClock
-                clock={clock}
-                durationMs={durationMs}
-                canPause={!mock}
-                onPause={() => pauseTimer(runId)}
-                onResume={() => resumeTimer(runId)}
-              />
-            </span>
-            <Separator orientation="vertical" className={cn(mode === "review" && "max-sm:hidden")} />
-            <span className={cn(mode === "review" && "max-sm:hidden")}>
-              <WordCount count={blocks ? words : null} min={prompt.minWords} />
-            </span>
           </div>
-          {mode === "write" ? (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={onReview}
-              disabled={words === 0 || (mock && clock?.status === "idle")}
-            >
-              Review
-            </Button>
-          ) : (
-            <Button variant="outline" size="sm" onClick={() => setMode("write")}>
-              Back
-            </Button>
-          )}
-        </div>
-      </AppBar>
+        </AppBar>
 
-      <AlertDialog open={confirmEnd} onOpenChange={setConfirmEnd}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Hand in now?</AlertDialogTitle>
-            <AlertDialogDescription>
-              The clock stops and your essay locks, as in the exam.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Keep writing</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => {
-                endTimer(runId);
-                setConfirmEnd(false);
-                review();
-              }}
-            >
-              Hand in
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+        <AlertDialog open={confirmEnd} onOpenChange={setConfirmEnd}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Hand in now?</AlertDialogTitle>
+              <AlertDialogDescription>
+                The clock stops and your essay locks, as in the exam.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Keep writing</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={() => {
+                  endTimer(runId);
+                  setConfirmEnd(false);
+                  review();
+                }}
+              >
+                Hand in
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
 
-      {mode === "review" && blocks && clock ? (
-        // The same column and everything above the editor, so the text doesn't move.
-        <main className="mx-auto w-full max-w-3xl px-4 pb-40 sm:px-10">
-          <ReviewView
-            draftId={runId}
-            flow={flow}
-            blocks={blocks}
-            onBlocksChange={setBlocks}
-            heading={
+        {mode === "review" && blocks && clock ? (
+          // The same column and everything above the editor, so the text doesn't move.
+          <main className="mx-auto w-full max-w-3xl px-4 pb-40 sm:px-10">
+            <ReviewView
+              draftId={runId}
+              flow={flow}
+              blocks={blocks}
+              onBlocksChange={setBlocks}
+              heading={
+                <>
+                  <PromptHeader prompt={prompt} />
+                  <RunNote
+                    status={clock.status}
+                    mock={mock}
+                    handedIn={clock.status === "over" && clock.left > 0}
+                    minutes={minutes}
+                    onResume={() => resumeTimer(runId)}
+                  />
+                </>
+              }
+            />
+          </main>
+        ) : (
+          // sm:px-10 leaves room in the left margin for the paragraph handles.
+          <main className="relative mx-auto w-full max-w-3xl px-4 sm:px-10">
+            <Dictionary.Margin />
+            <TimeAnnouncer clock={clock} mock={mock} />
+            <PromptHeader prompt={prompt} />
+
+            {!blocks || !clock ? (
+              <EditorSkeleton />
+            ) : mock && clock.status === "idle" ? (
+              <MockStart minutes={minutes} onStart={() => startTimer(runId)} />
+            ) : (
               <>
-                <PromptHeader prompt={prompt} />
                 <RunNote
                   status={clock.status}
                   mock={mock}
@@ -184,42 +212,20 @@ export function WritingScreen({ prompt, view = "write" }: { prompt: Prompt; view
                   minutes={minutes}
                   onResume={() => resumeTimer(runId)}
                 />
+                <EssayEditor
+                  value={blocks}
+                  onValueChange={onValueChange}
+                  readOnly={locked}
+                  aria-label="Your essay"
+                  placeholder="Écrivez ici…"
+                  autoFocus
+                  className="max-w-prose min-h-96 pb-40"
+                />
               </>
-            }
-          />
-        </main>
-      ) : (
-        // sm:px-10 leaves room in the left margin for the paragraph handles.
-        <main className="mx-auto w-full max-w-3xl px-4 sm:px-10">
-          <TimeAnnouncer clock={clock} mock={mock} />
-          <PromptHeader prompt={prompt} />
-
-          {!blocks || !clock ? (
-            <EditorSkeleton />
-          ) : mock && clock.status === "idle" ? (
-            <MockStart minutes={minutes} onStart={() => startTimer(runId)} />
-          ) : (
-            <>
-              <RunNote
-                status={clock.status}
-                mock={mock}
-                handedIn={clock.status === "over" && clock.left > 0}
-                minutes={minutes}
-                onResume={() => resumeTimer(runId)}
-              />
-              <EssayEditor
-                value={blocks}
-                onValueChange={onValueChange}
-                readOnly={locked}
-                aria-label="Your essay"
-                placeholder="Écrivez ici…"
-                autoFocus
-                className="max-w-prose min-h-96 pb-40"
-              />
-            </>
-          )}
-        </main>
-      )}
+            )}
+          </main>
+        )}
+      </Dictionary>
     </TooltipProvider>
   );
 }

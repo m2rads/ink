@@ -48,11 +48,32 @@ Explored in a throwaway `/proto/home` with four directions; the pick is a mix of
   - **Rail's** collapsed icon rail: the essay list one click away instead of always visible.
   - The new-essay form (prompt, Section A/B, practice/mock) in a dialog, popover or sheet: too exam-centric for the entry point.
 
+### Dictionary (decided 2026-10-25)
+
+Explored in `/proto/dictionary` in two rounds: where it lives, then how the language is set. Built as `app/write/dictionary.tsx`; the prototype stays only to compare Collins entries once a key arrives, then gets deleted.
+
+- **Placement, Margin:** the dictionary sits in the empty space left of the essay, the mirror of the review's notes on the right. No panel border or scrim; the essay never moves, open or hidden. Hidden, it folds to a "Dictionary ⌘K" button in the same spot. ⌘K (Ctrl+K) opens it or focuses the field; Escape goes back to the essay. It needs about 1312px of window; narrower, the same lookup opens in a sheet from the left (book icon in the app bar).
+- **Language, Pair:** above the field, `[Your language ▾] ⇄ Français`. The left side is what you type; ⇄ swaps. The other side is always French. Your language is a menu, each name in its own script (English names only beside non-Latin scripts).
+- **Search waits for a pause** (300ms) instead of running per keystroke; the previous result stays until then.
+- Practice runs and essays only, never mock runs (no help in exam conditions).
+- Rejected:
+  - **Docked** column: moves the essay to re-center and takes 320px.
+  - **Sheet** as the main form: its scrim hides the sentence you're looking a word up for. Kept only as the narrow-window fallback.
+  - **Peek** corner card: room for one entry, and it floats over the text.
+  - **Set once** (auto direction, a language code by the title): words spelled the same in both languages come back mixed, and the code is easy to miss.
+  - **Ask once** (asked in the empty state, then a "Change" line): an extra first-use step, and the setting is only reachable from the bottom line.
+- **Source, for now: Google Cloud Translation** (`lib/translate.ts`, `lookUp` in `app/write/actions.ts`, key in `GOOGLE_TRANSLATE_API_KEY`). One translation per lookup, no gender, senses or examples; the panel shows only the translation (no source label, no outside links). Google's attribution rules still ask for the results to be marked as Google Translate and for the app's description and help to say so: settle that before launch. Answers are kept for the session in the page only.
+- **Not decided:** a real dictionary source. The prototype compares 25 hand-written entries with the Collins API (`app/proto/dictionary/collins/route.ts`, key in `COLLINS_API_KEY`).
+  - **Collins API** (terms of 13 February 2025): bilingual dictionaries are free up to 5,000 calls a month, then £75/month to 30,000 and £400/month to 100,000; a commercial product needs their commercial licence. Entries may not be stored or cached, so every lookup waits on Collins, and every use shows "www.collinsdictionary.com © HarperCollins Publishers Ltd 2025".
+  - **Licensed data instead of the API:** Collins licenses its bilingual dictionaries (26 languages) as data through collins.licensing@harpercollins.co.uk. That's the route to instant, offline lookups stored in the browser.
+  - **Wiktionary** (kaikki.org extracts): free and storable (CC BY-SA, attribution), French entries with English meanings only, uneven on phrases.
+
 ### Open questions
 
 - How often AI grammar feedback flags correct French as wrong. Measure on real essays before trusting the loop.
 - Whether a tired learner finishes the correction loop or skips to the answer.
 - Whether AI score estimates track real TEF results.
+- Which dictionary source to license: compare candidates on the same 50 words from real essays.
 
 ## Rendering
 
