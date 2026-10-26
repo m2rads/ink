@@ -1,6 +1,7 @@
 "use client";
 
-import { ArrowRightLeftIcon, BookOpenTextIcon, ChevronDownIcon, XIcon } from "lucide-react";
+import { Popover as PopoverPrimitive } from "@base-ui/react/popover";
+import { ArrowRightLeftIcon, BookOpenTextIcon, ChevronDownIcon, LanguagesIcon, XIcon } from "lucide-react";
 import {
   createContext,
   use,
@@ -25,12 +26,14 @@ import {
 import { Input } from "@/components/ui/input";
 import { Kbd, KbdGroup } from "@/components/ui/kbd";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { LANGUAGE_CODES, LANGUAGES, language, type LanguageCode } from "@/lib/languages";
 import { createLocalStore } from "@/lib/local-store";
 import { cn } from "@/lib/utils";
 
 import { lookUp } from "./actions";
+import { SELECTION_UI, selectionAnchor, useSelection, type Selected } from "./selection";
 
 // The dictionary, as decided in AGENTS.md (Dictionary): it lives in the
 // empty space left of the essay, the mirror of the review's notes on the
@@ -49,6 +52,11 @@ import { lookUp } from "./actions";
 // Lookups wait for a pause in typing, and each one is a single translation
 // from Google Translate (lookUp in actions.ts) until a dictionary source is
 // licensed.
+//
+// Selecting French in the essay offers the same lookup in place (AGENTS.md,
+// Selection lookup): a "Translate ⌘K" pill above the selection that grows
+// into its meaning when clicked. With words selected, ⌘K translates them
+// instead of opening the panel.
 
 const WIDE = "(min-width: 1312px)";
 const DEBOUNCE_MS = 300;
@@ -127,6 +135,8 @@ function DictionaryRoot({ enabled = true, children }: { enabled?: boolean; child
   const inputRef = useRef<HTMLInputElement>(null);
   const toggleRef = useRef<HTMLButtonElement | null>(null);
   const lastField = useRef<HTMLTextAreaElement | null>(null);
+  const { selected, readNow, dismiss } = useSelection(enabled);
+  const [asked, setAsked] = useState<Selected | null>(null);
 
   // Where the writer was, so Escape and ⌘K can take them back.
   useEffect(() => {
@@ -163,14 +173,16 @@ function DictionaryRoot({ enabled = true, children }: { enabled?: boolean; child
       if (e.key.toLowerCase() !== "k" || e.shiftKey || e.altKey) return;
       if (!(isMac() ? e.metaKey : e.ctrlKey)) return;
       e.preventDefault();
-      if (!wide) setSheetOpen((o) => !o);
+      const now = readNow();
+      if (now) setAsked(now);
+      else if (!wide) setSheetOpen((o) => !o);
       else if (!settingsStore.read("settings").open) show(true);
       else if (document.activeElement === inputRef.current) focusEssay();
       else inputRef.current?.focus();
     };
     window.addEventListener("keydown", down);
     return () => window.removeEventListener("keydown", down);
-  }, [enabled, wide, show, focusEssay]);
+  }, [enabled, wide, show, focusEssay, readNow]);
 
   return (
     <Context
@@ -191,6 +203,14 @@ function DictionaryRoot({ enabled = true, children }: { enabled?: boolean; child
     >
       <ToggleRef.Provider value={toggleRef}>{children}</ToggleRef.Provider>
       {enabled && wide === false && <DictionarySheet />}
+      {enabled && (
+        <SelectionLookup
+          selected={selected}
+          asked={sameSelection(asked, selected)}
+          onAsk={setAsked}
+          onDismiss={dismiss}
+        />
+      )}
     </Context>
   );
 }
@@ -470,6 +490,50 @@ function Result({
   direction: Direction;
   onFound: (word: string) => void;
 }) {
+  const { answer, retry } = useAnswer(term, lang, direction);
+
+  const found = answer?.ok === true && !sameWord(answer.translation, term);
+  // A word counts as looked up once the writer stops on its answer.
+  useEffect(() => {
+    if (!found) return;
+    const t = setTimeout(() => onFound(term), 900);
+    return () => clearTimeout(t);
+    // onFound changes every render; the word is what matters.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [found, term]);
+
+  const target = direction === "to-fr" ? "fr" : lang;
+
+  return (
+    <div className="px-1 py-4" aria-live="polite">
+      {!answer ? (
+        <p className="text-label text-text-3">Translating…</p>
+      ) : !answer.ok ? (
+        <p className="text-label text-text-2">
+          Couldn’t translate “<span dir="auto">{term}</span>”.{" "}
+          <button
+            type="button"
+            onClick={retry}
+            className="relative text-text underline decoration-border-strong underline-offset-4 transition-colors duration-150 before:absolute before:-inset-x-1 before:-inset-y-2 hover:decoration-current"
+          >
+            Try again
+          </button>
+        </p>
+      ) : !found ? (
+        <p className="text-ui text-text-3">
+          No translation for “<span dir="auto">{term}</span>”. Check the spelling, or swap the languages.
+        </p>
+      ) : (
+        <p lang={target} dir="auto" className={cn("text-title text-balance", target === "fr" && "font-serif")}>
+          {answer.translation}
+        </p>
+      )}
+    </div>
+  );
+}
+
+/** The answer for `term`, from this session's answers or a lookup. Key the caller by term. */
+function useAnswer(term: string, lang: LanguageCode, direction: Direction) {
   const key = `${lang}:${direction}:${term.toLocaleLowerCase("fr")}`;
   const [answer, setAnswer] = useState<Answer | undefined>(() => answers.get(key));
   const [attempt, setAttempt] = useState(0);
@@ -493,42 +557,114 @@ function Result({
     };
   }, [key, term, lang, direction, attempt]);
 
-  const found = answer?.ok === true && !sameWord(answer.translation, term);
-  // A word counts as looked up once the writer stops on its answer.
-  useEffect(() => {
-    if (!found) return;
-    const t = setTimeout(() => onFound(term), 900);
-    return () => clearTimeout(t);
-    // onFound changes every render; the word is what matters.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [found, term]);
+  return {
+    answer,
+    retry() {
+      setAnswer(undefined);
+      setAttempt((n) => n + 1);
+    },
+  };
+}
 
-  const target = direction === "to-fr" ? "fr" : lang;
+const sameSelection = (a: Selected | null, b: Selected | null) =>
+  !!a && !!b && a.el === b.el && a.start === b.start && a.end === b.end;
+
+/**
+ * Above French selected in the essay: a "Translate ⌘K" pill that grows into
+ * the selection's meaning when asked. It never takes focus, so typing still
+ * replaces the selection; Escape or a click elsewhere closes it. On touch
+ * screens it sits below, out of the way of the system's copy/paste menu.
+ */
+function SelectionLookup({
+  selected,
+  asked,
+  onAsk,
+  onDismiss,
+}: {
+  selected: Selected | null;
+  asked: boolean;
+  onAsk: (s: Selected) => void;
+  onDismiss: () => void;
+}) {
+  const { settings } = useDictionary();
+  // What was last shown, so the popover keeps its words and place while it fades out.
+  const [held, setHeld] = useState<{ selected: Selected; asked: boolean } | null>(null);
+  if (selected && (held?.selected !== selected || held.asked !== asked)) setHeld({ selected, asked });
+  if (!settings) return null;
 
   return (
-    <div className="px-1 py-4" aria-live="polite">
+    <PopoverPrimitive.Root
+      open={!!selected}
+      onOpenChange={(open) => {
+        if (!open) onDismiss();
+      }}
+    >
+      <PopoverPrimitive.Portal>
+        <PopoverPrimitive.Positioner
+          anchor={held ? selectionAnchor(held.selected) : null}
+          side={held && matchMedia("(pointer: coarse)").matches ? "bottom" : "top"}
+          sideOffset={6}
+          collisionPadding={16}
+          className="isolate z-50"
+        >
+          <PopoverPrimitive.Popup
+            {...{ [SELECTION_UI]: "" }}
+            aria-label="Translate the selection"
+            initialFocus={false}
+            finalFocus={false}
+            // Pressing inside keeps the caret and the selection in the essay.
+            onPointerDown={(e) => e.preventDefault()}
+            className={cn(
+              "origin-(--transform-origin) bg-raised text-text shadow-overlay outline-hidden transition-[opacity,scale] duration-150 ease-out data-starting-style:scale-95 data-starting-style:opacity-0 data-ending-style:scale-95 data-ending-style:opacity-0 data-ending-style:duration-100 data-ending-style:ease-in",
+              held?.asked ? "grid w-max max-w-72 gap-1 rounded-card px-3 py-2.5" : "rounded-full p-0.5",
+            )}
+          >
+            {held &&
+              (held.asked ? (
+                <>
+                  <p lang="fr" className="font-serif text-label text-text-3 italic">
+                    {held.selected.term}
+                  </p>
+                  <SelectionMeaning key={`${settings.lang}:${held.selected.term}`} term={held.selected.term} lang={settings.lang} />
+                </>
+              ) : (
+                <Button variant="ghost" size="xs" onClick={() => onAsk(held.selected)}>
+                  <LanguagesIcon data-icon="inline-start" />
+                  Translate
+                  <span className="ml-1">
+                    <Shortcut />
+                  </span>
+                </Button>
+              ))}
+          </PopoverPrimitive.Popup>
+        </PopoverPrimitive.Positioner>
+      </PopoverPrimitive.Portal>
+    </PopoverPrimitive.Root>
+  );
+}
+
+/** The selection's meaning in the writer's language; a placeholder line holds its place while it loads. */
+function SelectionMeaning({ term, lang }: { term: string; lang: LanguageCode }) {
+  const { answer, retry } = useAnswer(term, lang, "from-fr");
+  return (
+    <div aria-live="polite" className="min-h-[1lh] text-body">
       {!answer ? (
-        <p className="text-label text-text-3">Translating…</p>
+        <Skeleton className="mt-[0.3lh] h-[0.55lh] w-32" />
       ) : !answer.ok ? (
-        <p className="text-label text-text-2">
-          Couldn’t translate “<span dir="auto">{term}</span>”.{" "}
+        <p className="text-ui text-text-2">
+          Couldn’t translate.{" "}
           <button
             type="button"
-            onClick={() => {
-              setAnswer(undefined);
-              setAttempt((n) => n + 1);
-            }}
+            onClick={retry}
             className="relative text-text underline decoration-border-strong underline-offset-4 transition-colors duration-150 before:absolute before:-inset-x-1 before:-inset-y-2 hover:decoration-current"
           >
             Try again
           </button>
         </p>
-      ) : !found ? (
-        <p className="text-ui text-text-3">
-          No translation for “<span dir="auto">{term}</span>”. Check the spelling, or swap the languages.
-        </p>
+      ) : sameWord(answer.translation, term) ? (
+        <p className="text-ui text-text-3">No translation. Check the spelling</p>
       ) : (
-        <p lang={target} dir="auto" className={cn("text-title text-balance", target === "fr" && "font-serif")}>
+        <p lang={lang} dir="auto" className="font-medium text-balance">
           {answer.translation}
         </p>
       )}

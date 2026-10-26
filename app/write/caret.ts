@@ -1,4 +1,4 @@
-// Caret geometry inside a <textarea>, which the DOM doesn't expose. A hidden
+// Caret and selection geometry inside a <textarea>, which the DOM doesn't expose. A hidden
 // mirror div copies the textarea's text metrics, and a marker span placed at
 // the offset reports where the caret would be drawn.
 
@@ -37,7 +37,8 @@ const COPIED = [
 
 let mirror: HTMLDivElement | null = null;
 
-function caretPoint(el: HTMLTextAreaElement, offset: number): { top: number; left: number } {
+/** The hidden mirror, set to `el`'s text metrics. */
+function mirrorOf(el: HTMLTextAreaElement): HTMLDivElement {
   if (!mirror) {
     mirror = document.createElement("div");
     mirror.setAttribute("aria-hidden", "true");
@@ -53,7 +54,11 @@ function caretPoint(el: HTMLTextAreaElement, offset: number): { top: number; lef
   }
   const style = getComputedStyle(el);
   for (const prop of COPIED) mirror.style[prop] = style[prop];
+  return mirror;
+}
 
+function caretPoint(el: HTMLTextAreaElement, offset: number): { top: number; left: number } {
+  const mirror = mirrorOf(el);
   mirror.textContent = el.value.slice(0, offset);
   const marker = document.createElement("span");
   // Non-empty so the marker gets a line box even at the very end.
@@ -118,4 +123,17 @@ export function offsetAtX(el: HTMLTextAreaElement, x: number, line: "first" | "l
     return lo - 1;
   }
   return lo;
+}
+
+/** One box per visual line of the text from `start` to `end`, relative to the textarea's border box. */
+export function rangeRects(el: HTMLTextAreaElement, start: number, end: number) {
+  const mirror = mirrorOf(el);
+  mirror.textContent = el.value.slice(0, start);
+  const span = document.createElement("span");
+  span.textContent = el.value.slice(start, end);
+  mirror.append(span, el.value.slice(end) || ".");
+  const box = mirror.getBoundingClientRect();
+  return [...span.getClientRects()]
+    .filter((r) => r.width > 0)
+    .map((r) => ({ x: r.left - box.left, y: r.top - box.top, width: r.width, height: r.height }));
 }

@@ -23,6 +23,8 @@ Hover/focus hints, max one short sentence. Opens after 400ms; after that, neighb
 
 Click-opened content anchored to its trigger, such as rule details on small screens. Use `PopoverHeader`, `PopoverTitle`, `PopoverDescription` for text. 288px wide (`w-72`); change the width with `className="w-80"` if the content needs it, never its padding or background.
 
+Anchored to selected text rather than a trigger (the dictionary's selection lookup, `SelectionLookup` in `app/write/dictionary.tsx`), it uses Base UI's Popover parts directly with a virtual `anchor`, `initialFocus={false}` and `finalFocus={false}`, and keeps the same motion, `bg-raised` and `shadow-overlay`. Don't move focus out of a textarea for something the writer only reads.
+
 ## DropdownMenu
 
 Actions on one item (an essay row). Order: common actions first, a `DropdownMenuSeparator`, then the destructive one with `variant="destructive"`; `DropdownMenuItem` has only `default` and `destructive`. Keyboard shortcuts go in `DropdownMenuShortcut`. A menu item that deletes opens an AlertDialog; it never deletes immediately.

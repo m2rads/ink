@@ -68,6 +68,18 @@ Explored in `/proto/dictionary` in two rounds: where it lives, then how the lang
   - **Licensed data instead of the API:** Collins licenses its bilingual dictionaries (26 languages) as data through collins.licensing@harpercollins.co.uk. That's the route to instant, offline lookups stored in the browser.
   - **Wiktionary** (kaikki.org extracts): free and storable (CC BY-SA, attribution), French entries with English meanings only, uneven on phrases.
 
+### Selection lookup: On ask (decided 2026-10-25)
+
+Explored in a throwaway `/proto/selection` with three directions. Selecting French in the essay (or its title) can show what it means in your language, in a popover at the selection. Built into `<Dictionary>`, so it's on wherever the dictionary is: practice runs and essays, never mock runs or review.
+
+- **On ask:** a settled selection (on mouse up or a double-click; 350ms after Shift+arrows or touch handles stop) of 1–8 words in one paragraph shows a small "Translate ⌘K" pill above it. The meaning appears only when asked: click the pill or press ⌘K. With French selected, ⌘K translates it; with nothing selected it opens the dictionary as before.
+- The pill grows into a card in the same place: the French in Literata italic, then the translation. Neither takes focus, so typing still replaces the selection. Escape or a click elsewhere closes it. Above the selection with a mouse, below it on touch screens (the system's copy/paste menu sits above).
+- The selection widens to whole words ("élétrava" looks up "télétravail"). Same source and session cache as the dictionary (Google Translate, French into your language).
+- Rejected:
+  - **Instant** (the card on every settled selection): writers select words to retype them far more often than to look them up, and each time a card covers the line above.
+  - **Margin** (the selection fills the dictionary on the left; nothing over the essay): the eye has to travel away from the sentence, and below 1312px it needs a popover anyway.
+- Found with real essays, true of every direction and worth weighing in the source decision: Google silently corrects misspellings ("embouteilages" came back "traffic jams", so the learner never sees the mistake), and translates idioms and lone words without their sentence ("tirent le diable par la queue" → "are pulling the devil by the tail", "trajet" → "route").
+
 ### Open questions
 
 - How often AI grammar feedback flags correct French as wrong. Measure on real essays before trusting the loop.
