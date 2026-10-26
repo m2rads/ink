@@ -23,7 +23,7 @@ import {
   type Review,
 } from "./review-store";
 
-// On-demand AI review, shared by the essay and exam-run screens. Review can
+// On-demand AI review, for the essay screen. Review can
 // be pressed any time: Ink can't know when writing is done. Pressing it
 // again on unchanged text reopens the last review instead of paying for a
 // new one; on changed text, a new review replaces the old.
@@ -138,7 +138,7 @@ function placeMistakes(review: Review, blocks: Block[], seen: Record<string, num
     if (!at) continue;
     const overlaps = placed.some((p) => p.blockId === m.blockId && at.start < p.end && p.start < at.end);
     if (overlaps) continue;
-    placed.push({ ...m, ...at, number: 0, seen: seen[m.category] ?? 0 });
+    placed.push({ ...m, ...at, answered: m.answered ?? false, number: 0, seen: seen[m.category] ?? 0 });
   }
   placed.sort((a, b) => order.get(a.blockId)! - order.get(b.blockId)! || a.start - b.start);
   return placed.map((m, i) => ({ ...m, number: i + 1 }));
@@ -218,24 +218,24 @@ export function ReviewView({
     >
       <Correction.Layout aria-busy={checking || undefined}>
         {heading}
+        {/* Interface copy stays out of the essay's column: the status, the
+            summary and the filters all head the notes column. */}
         <Correction.Header>
-          {checking ? (
-            <>
-              <p className="text-label text-text-3" aria-live="polite">
-                Reviewing your essay…
-              </p>
-              <Correction.Aside>
+          <Correction.Aside className="grid gap-3">
+            {checking ? (
+              <>
+                <p className="text-label text-text-3" aria-live="polite">
+                  Reviewing your essay…
+                </p>
                 <ReviewTrace paragraphs={blocks.filter((b) => b.text.trim()).length} found={flow.found} />
-              </Correction.Aside>
-            </>
-          ) : (
-            <>
-              <Summary mistakes={mistakes} />
-              <Correction.Aside>
+              </>
+            ) : (
+              <>
+                <Summary mistakes={mistakes} />
                 <Correction.Filters />
-              </Correction.Aside>
-            </>
-          )}
+              </>
+            )}
+          </Correction.Aside>
         </Correction.Header>
         <div className="flex flex-col gap-y-[1lh] font-serif text-essay">
           {blocks.map((b) => (

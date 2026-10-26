@@ -52,8 +52,8 @@ Sizes: `default`, `xs`, `sm`, `lg`, `icon`, `icon-xs`, `icon-sm`, `icon-lg`. Not
 | Size | Height | Use |
 | --- | --- | --- |
 | `default` | 36px | Everywhere unless a row below applies. Matches Input height. |
-| `sm` | 32px | Inside notes and cards, and in dense toolbars. |
-| `xs` | 28px | Inline next to 13–14px text, such as an action in a note header. |
+| `sm` | 32px | Inside cards, and in dense toolbars. |
+| `xs` | 28px | Inline next to 13–14px text, and the actions in a correction note (Check, Hint, Show answer, Skip). |
 | `lg` | 40px | The single CTA of an empty state or onboarding step. |
 | `icon`, `icon-sm`, `icon-xs`, `icon-lg` | 36/32/28/40px circles | Icon-only buttons, matching the text size beside them. |
 

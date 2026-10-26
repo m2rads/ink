@@ -30,7 +30,7 @@ import {
   type Caret,
   type Edit,
 } from "./blocks";
-import { caretX, isOnFirstLine, isOnLastLine, offsetAtX } from "./caret";
+import { caretTop, caretX, isOnFirstLine, isOnLastLine, offsetAtX } from "./caret";
 
 // Block-based essay editor: one auto-growing <textarea> per paragraph. Plain
 // text only, so the browser handles typing, accents, IME and selection inside
@@ -115,11 +115,20 @@ type EssayEditorProps = Omit<React.ComponentProps<"div">, "defaultValue" | "onCh
   onValueChange?: (blocks: Block[]) => void;
   /** Shown in the first paragraph while the essay is empty. */
   placeholder?: string;
-  /** Put the caret at the end of the essay on mount (fine pointers only). */
+  /**
+   * On mount (fine pointers only), put the caret back where the writer left
+   * it (`defaultCaret`), scrolling it to the middle of the window if it's off
+   * screen. Without one, nothing takes focus: never a place the writer
+   * never was, like the end of the essay.
+   */
   autoFocus?: boolean;
+  /** Where the writer left the caret: what `onLeave` reported, saved with the draft. */
+  defaultCaret?: Caret | null;
+  /** Focus left the essay; `caret` is where the writer was, to restore with `defaultCaret`. */
+  onLeave?: (caret: Caret) => void;
   /** Locks the text and its order (time's up, paused). The caret can still move and select. */
   readOnly?: boolean;
-  /** The browser's spellcheck, in the editor's `lang` (French). Off in mock runs: the exam has none. */
+  /** The browser's spellcheck, in the editor's `lang` (French). */
   spellCheck?: boolean;
   /**
    * ↑ on the first line or ← at the very start of the first paragraph: move
@@ -135,6 +144,8 @@ export function EssayEditor({
   onValueChange,
   placeholder,
   autoFocus = false,
+  defaultCaret,
+  onLeave,
   readOnly = false,
   spellCheck = true,
   onExitTop,
@@ -582,8 +593,21 @@ export function EssayEditor({
 
   useEffect(() => {
     if (!autoFocus || !matchMedia("(pointer: fine)").matches) return;
-    const last = blocks[blocks.length - 1];
-    focusAt({ blockId: last.id, offset: last.text.length });
+    // Only where the writer left it; with no saved caret, nothing takes focus
+    // (never a guess like the end of the essay).
+    const caret = defaultCaret && blocks.some((b) => b.id === defaultCaret.blockId) ? defaultCaret : null;
+    if (!caret) return;
+    const el = textareas.current.get(caret.blockId);
+    if (!el) return;
+    const offset = Math.min(caret.offset, el.value.length);
+    const lineHeight = parseFloat(getComputedStyle(el).lineHeight);
+    const line = el.getBoundingClientRect().top + caretTop(el, offset);
+    if (line < 0 || line + lineHeight > innerHeight) {
+      // Off screen: bring back the place the writer left.
+      window.scrollTo({ top: scrollY + line + lineHeight / 2 - innerHeight / 2 });
+    }
+    el.focus({ preventScroll: true });
+    el.setSelectionRange(offset, offset);
     // Only on mount.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -863,13 +887,32 @@ export function EssayEditor({
     return { translate: `0 ${offset}px`, transition: "translate 200ms var(--ease-in-out)" };
   }
 
-  // Clicking the empty space around the paragraphs continues the essay.
+  // Clicking the gap between two paragraphs puts the caret in the nearer one,
+  // on its closest line at the clicked x. Any other empty space (below the
+  // essay, its padding) leaves focus and caret where they were: a click never
+  // sends the caret to the end of the essay.
   function onRootMouseDown(e: React.MouseEvent<HTMLDivElement>) {
     if (e.target !== e.currentTarget) return;
     e.preventDefault();
-    const last = blocks[blocks.length - 1];
-    if (spanning) land({ blockId: last.id, start: last.text.length, end: last.text.length, backward: false });
-    else focusAt({ blockId: last.id, offset: last.text.length });
+    const caret = caretInGap(e.clientX, e.clientY);
+    if (!caret) return;
+    if (spanning) land({ blockId: caret.blockId, start: caret.offset, end: caret.offset, backward: false });
+    else focusAt(caret);
+  }
+
+  function caretInGap(x: number, y: number): Caret | null {
+    for (let i = 0; i < blocks.length - 1; i++) {
+      const above = wrappers.current.get(blocks[i].id)?.getBoundingClientRect();
+      const below = wrappers.current.get(blocks[i + 1].id)?.getBoundingClientRect();
+      if (!above || !below || y < above.bottom || y > below.top) continue;
+      const up = y - above.bottom < below.top - y;
+      const block = blocks[up ? i : i + 1];
+      const el = textareas.current.get(block.id);
+      if (el) return { blockId: block.id, offset: offsetAtX(el, x - el.getBoundingClientRect().left, up ? "last" : "first") };
+      // Across paragraphs the <p>s stand in: the text just inside the nearer edge.
+      return caretAtPoint(x, up ? above.bottom - 2 : below.top + 2) ?? { blockId: block.id, offset: up ? block.text.length : 0 };
+    }
+    return null;
   }
 
   const showPlaceholder = blocks.length === 1 && blocks[0].text === "";
@@ -894,7 +937,13 @@ export function EssayEditor({
       onCut={(e) => onSpanCopy(e, !readOnly)}
       onPaste={onSpanPaste}
       onBlur={(e) => {
-        if (spanning && e.target === e.currentTarget && !e.currentTarget.contains(e.relatedTarget)) setSpanning(false);
+        if (e.currentTarget.contains(e.relatedTarget)) return;
+        if (spanning && e.target === e.currentTarget) setSpanning(false);
+        if (onLeave && e.target instanceof HTMLTextAreaElement) {
+          for (const [blockId, el] of textareas.current) {
+            if (el === e.target) onLeave({ blockId, offset: el.selectionStart });
+          }
+        }
       }}
       className={cn("flex cursor-text flex-col gap-y-[1lh] font-serif text-essay text-text outline-none", className)}
       {...props}

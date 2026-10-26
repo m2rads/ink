@@ -1,134 +1,109 @@
 import { describe, expect, test } from "bun:test";
 
 import {
-  IDLE,
+  MAX_MS,
   elapsed,
-  end,
   formatClock,
-  parseTimer,
+  isDone,
+  isWarning,
   pause,
-  remaining,
+  reading,
   resume,
   speakClock,
-  start,
-  status,
+  startTimer,
 } from "./timer";
 
 const MIN = 60_000;
-const B = 35 * MIN;
 
-describe("running", () => {
-  test("idle until started, then counts from the start time", () => {
-    expect(status(IDLE, B, 1000)).toBe("idle");
-    const s = start(IDLE, 1000);
-    expect(status(s, B, 1000 + 10 * MIN)).toBe("running");
-    expect(remaining(s, B, 1000 + 10 * MIN)).toBe(25 * MIN);
+describe("counting down", () => {
+  test("reads the time left from the start time", () => {
+    const t = startTimer(25 * MIN, 1000);
+    expect(reading(t, 1000 + 10 * MIN)).toBe(15 * MIN);
+    expect(isDone(t, 1000 + 10 * MIN)).toBe(false);
   });
 
-  test("a clock reading older than the start never shows more than full time", () => {
-    const s = start(IDLE, 10_000);
-    expect(remaining(s, B, 9_400)).toBe(B);
-    expect(formatClock(remaining(s, B, 9_400))).toBe("35:00");
+  test("a clock reading older than the start never shows more than the limit", () => {
+    const t = startTimer(25 * MIN, 10_000);
+    expect(reading(t, 9_400)).toBe(25 * MIN);
+    expect(formatClock(reading(t, 9_400))).toBe("25:00");
   });
 
-  test("starting twice keeps the first start time", () => {
-    const s = start(IDLE, 1000);
-    expect(start(s, 9999)).toBe(s);
+  test("stops itself at 0:00, never below", () => {
+    const t = startTimer(25 * MIN, 0);
+    expect(isDone(t, 25 * MIN)).toBe(true);
+    expect(reading(t, 40 * MIN)).toBe(0);
+    expect(formatClock(reading(t, 40 * MIN))).toBe("0:00");
   });
 
-  test("is over at exactly the duration, and goes negative after", () => {
-    const s = start(IDLE, 0);
-    expect(status(s, B, B - 1)).toBe("running");
-    expect(status(s, B, B)).toBe("over");
-    expect(remaining(s, B, B + 65_000)).toBe(-65_000);
-  });
-});
-
-describe("pausing (practice)", () => {
-  test("paused time doesn't count", () => {
-    let s = start(IDLE, 0);
-    s = pause(s, 5 * MIN);
-    expect(status(s, B, 20 * MIN)).toBe("paused");
-    expect(elapsed(s, 20 * MIN)).toBe(5 * MIN);
-    s = resume(s, 20 * MIN);
-    expect(elapsed(s, 30 * MIN)).toBe(15 * MIN);
-  });
-
-  test("pauses add up across several pauses", () => {
-    let s = start(IDLE, 0);
-    s = resume(pause(s, 1 * MIN), 3 * MIN);
-    s = resume(pause(s, 10 * MIN), 14 * MIN);
-    expect(s.pausedMs).toBe(6 * MIN);
-    expect(elapsed(s, 20 * MIN)).toBe(14 * MIN);
-  });
-
-  test("pause before start and double pause/resume are no-ops", () => {
-    expect(pause(IDLE, 5)).toBe(IDLE);
-    const p = pause(start(IDLE, 0), 10);
-    expect(pause(p, 20)).toBe(p);
-    const r = resume(p, 30);
-    expect(resume(r, 40)).toBe(r);
+  test("warns in the last 5 minutes, but not on a timer that short to begin with", () => {
+    const t = startTimer(25 * MIN, 0);
+    expect(isWarning(t, 19 * MIN)).toBe(false);
+    expect(isWarning(t, 20 * MIN)).toBe(true);
+    expect(isWarning(startTimer(3 * MIN, 0), 0)).toBe(false);
   });
 });
 
-describe("ending early (mock)", () => {
-  test("stops the clock where it is and the run is over", () => {
-    const s = end(start(IDLE, 0), 10 * MIN);
-    expect(status(s, B, 20 * MIN)).toBe("over");
-    expect(remaining(s, B, 20 * MIN)).toBe(25 * MIN);
+describe("counting up", () => {
+  test("reads the time so far", () => {
+    const t = startTimer(null, 0);
+    expect(reading(t, 7 * MIN)).toBe(7 * MIN);
+    expect(formatClock(reading(t, 7 * MIN + 500), false)).toBe("7:00");
   });
 
-  test("can't pause, resume or end again once ended", () => {
-    const s = end(start(IDLE, 0), 10 * MIN);
-    expect(pause(s, 11 * MIN)).toBe(s);
-    expect(resume(s, 11 * MIN)).toBe(s);
-    expect(end(s, 12 * MIN)).toBe(s);
-    expect(end(IDLE, 5)).toBe(IDLE);
+  test("stops itself after MAX_MS, so a forgotten tab can't count for days", () => {
+    const t = startTimer(null, 0);
+    expect(isDone(t, MAX_MS - 1)).toBe(false);
+    expect(isDone(t, 3 * 24 * 60 * MIN)).toBe(true);
+    expect(reading(t, 3 * 24 * 60 * MIN)).toBe(MAX_MS);
+  });
+
+  test("never warns", () => {
+    expect(isWarning(startTimer(null, 0), 60 * MIN)).toBe(false);
   });
 });
 
-describe("formatClock", () => {
-  test("counts down in m:ss, rounding up", () => {
-    expect(formatClock(B)).toBe("35:00");
-    expect(formatClock(34 * MIN + 12_000)).toBe("34:12");
+describe("pausing", () => {
+  test("time paused doesn't count", () => {
+    let t = startTimer(25 * MIN, 0);
+    t = pause(t, 5 * MIN);
+    expect(reading(t, 50 * MIN)).toBe(20 * MIN);
+    t = resume(t, 50 * MIN);
+    expect(reading(t, 55 * MIN)).toBe(15 * MIN);
+  });
+
+  test("pausing twice keeps the first pause; resuming a running timer changes nothing", () => {
+    const t = pause(startTimer(null, 0), 1000);
+    expect(pause(t, 9000)).toBe(t);
+    const running = startTimer(null, 0);
+    expect(resume(running, 5000)).toBe(running);
+  });
+
+  test("a finished timer can't be paused", () => {
+    const t = startTimer(MIN, 0);
+    expect(pause(t, 2 * MIN)).toBe(t);
+  });
+
+  test("elapsed is measured to the pause while paused", () => {
+    const t = pause(startTimer(null, 0), 3 * MIN);
+    expect(elapsed(t, 90 * MIN)).toBe(3 * MIN);
+  });
+});
+
+describe("formatting", () => {
+  test("minutes and seconds, then hours", () => {
+    expect(formatClock(61_000)).toBe("1:01");
+    expect(formatClock(62 * MIN + 3000)).toBe("1:02:03");
+  });
+
+  test("a countdown rounds up, a count-up rounds down", () => {
     expect(formatClock(59_001)).toBe("1:00");
-    expect(formatClock(500)).toBe("0:01");
-    expect(formatClock(0)).toBe("0:00");
+    expect(formatClock(59_001, false)).toBe("0:59");
   });
 
-  test("shows overtime with a plus", () => {
-    expect(formatClock(-500)).toBe("+0:00");
-    expect(formatClock(-65_000)).toBe("+1:05");
-  });
-});
-
-describe("speakClock", () => {
-  test("reads time left and overtime in words", () => {
+  test("spoken", () => {
     expect(speakClock(34 * MIN + 12_000)).toBe("34 minutes 12 seconds left");
-    expect(speakClock(1 * MIN)).toBe("1 minute left");
-    expect(speakClock(-61_000)).toBe("1 minute 1 second over time");
+    expect(speakClock(MIN, false)).toBe("1 minute so far");
     expect(speakClock(0)).toBe("0 seconds left");
-  });
-});
-
-describe("parseTimer", () => {
-  test("round-trips a stored state", () => {
-    const s = pause(start(IDLE, 100), 200);
-    expect(parseTimer(JSON.stringify(s))).toEqual(s);
-  });
-
-  test("reads states saved before endedAt existed", () => {
-    expect(parseTimer(JSON.stringify({ startedAt: 100, pausedAt: null, pausedMs: 0 }))).toEqual({
-      startedAt: 100,
-      pausedAt: null,
-      pausedMs: 0,
-      endedAt: null,
-    });
-  });
-
-  test("rejects corrupt or partial data", () => {
-    expect(parseTimer("{")).toBeNull();
-    expect(parseTimer(JSON.stringify({ startedAt: "soon" }))).toBeNull();
-    expect(parseTimer(null)).toBeNull();
+    expect(speakClock(61 * MIN, false)).toBe("1 hour 1 minute so far");
   });
 });

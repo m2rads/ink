@@ -79,6 +79,11 @@ export function caretX(el: HTMLTextAreaElement, offset: number): number {
   return caretPoint(el, offset).left;
 }
 
+/** The top of the caret's line, from the top of the textarea's box. */
+export function caretTop(el: HTMLTextAreaElement, offset: number): number {
+  return caretPoint(el, offset).top;
+}
+
 /**
  * The offset on the textarea's first or last visual line whose caret is
  * horizontally closest to `x`, so ↑/↓ across blocks keeps its column.

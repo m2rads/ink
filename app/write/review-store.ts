@@ -8,8 +8,8 @@ import { createLocalStore } from "@/lib/local-store";
 import type { Block } from "./blocks";
 
 // The latest review of each draft, and the memory of mistakes across essays.
-// Both live in localStorage until there's a server, keyed by draft id (an
-// essay id, or a sample prompt and run).
+// Both live in localStorage until there's a server, keyed by draft id (the
+// essay's id).
 //
 // One review per draft: reviewing again replaces it, because edits move the
 // text and old marks would point at the wrong words. For the same reason the
@@ -27,6 +27,8 @@ export type ReviewMistake = Omit<Mistake, "block"> & {
   status: MarkStatus;
   attempts: number;
   hinted: boolean;
+  /** The answer was shown in the note (absent on reviews saved before it existed). */
+  answered?: boolean;
   /** What replaced `wrong` in the essay once fixed or revealed. */
   final: string | null;
 };
@@ -67,6 +69,16 @@ export function saveReview(draftId: string, review: Review) {
   remember(draftId, review.mistakes);
 }
 
+/** Drop a draft's review and its counts from the memory across essays. */
+export function forgetReview(draftId: string) {
+  reviews.remove(draftId);
+  const all = memory.read("all");
+  if (!(draftId in all)) return;
+  const rest = { ...all };
+  delete rest[draftId];
+  memory.write("all", rest);
+}
+
 /** Has the essay changed since it was reviewed, other than through the review's own fixes? */
 export function isStale(review: Review, blocks: Block[]): boolean {
   return review.text.length !== blocks.length || review.text.some((t, i) => t !== blocks[i].text);
@@ -90,6 +102,7 @@ export function newReview(
       status: "open",
       attempts: 0,
       hinted: false,
+      answered: false,
       final: null,
     })),
   };

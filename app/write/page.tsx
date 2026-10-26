@@ -1,46 +1,24 @@
 import type { Metadata } from "next";
+import { redirect } from "next/navigation";
 import { Suspense } from "react";
 
 import { AppBarSkeleton } from "@/components/app-bar";
 import { Skeleton } from "@/components/ui/skeleton";
 
 import { EssayScreen } from "./essay-screen";
-import { WritingScreen, type Prompt } from "./writing-screen";
 
 export const metadata: Metadata = {
   title: "Write · Ink",
 };
 
-// One sample prompt per section until prompts come from a library. French
-// punctuation takes a narrow no-break space before "?".
-const PROMPTS: Record<Prompt["section"], Omit<Prompt, "run">> = {
-  A: {
-    id: "chien-retrouve",
-    section: "A",
-    title: "Un chien parcourt 300 kilomètres pour retrouver sa famille",
-    instructions: "Voici le début d’un article paru dans un journal local. Écrivez la suite de l’article.",
-    excerpt:
-      "Max, un berger allemand de six ans, avait disparu pendant le déménagement de sa famille en mars dernier. Mardi matin, les Moreau ont reçu un appel inattendu d’un refuge situé à 300 kilomètres de chez eux…",
-    minWords: 80,
-  },
-  B: {
-    id: "teletravail",
-    section: "B",
-    title: "Le télétravail devrait-il devenir la norme ?",
-    instructions:
-      "Un magazine en ligne demande à ses lecteurs ce qu’ils pensent du télétravail. Écrivez un article dans lequel vous donnez votre opinion et la défendez avec des arguments et des exemples.",
-    minWords: 200,
-  },
-};
-
 // /write?essay=<id> opens one of the user's essays (from /home); &new=1 is a
-// new essay that isn't saved until something is written. The sample
-// exam runs stay at /write?section=A&run=mock until runs get their own entry.
-// Search params are request-time data, so they're read inside Suspense: the
-// skeleton prerenders as the static shell and the run streams in.
+// new essay that isn't saved until something is written. Without an essay
+// there's nothing to open, so it goes Home. Search params are request-time
+// data, so they're read inside Suspense: the skeleton prerenders as the
+// static shell and the essay streams in.
 export default function WritePage({ searchParams }: PageProps<"/write">) {
   return (
-    <Suspense fallback={<WritingSkeleton />}>
+    <Suspense fallback={<EssaySkeleton />}>
       <Run searchParams={searchParams} />
     </Suspense>
   );
@@ -49,13 +27,11 @@ export default function WritePage({ searchParams }: PageProps<"/write">) {
 async function Run({ searchParams }: Pick<PageProps<"/write">, "searchParams">) {
   const params = await searchParams;
   const view = params.view === "review" ? "review" : "write";
-  if (typeof params.essay === "string") return <EssayScreen id={params.essay} view={view} fresh={params.new === "1"} />;
-  const section = params.section === "A" ? "A" : "B";
-  const run = params.run === "mock" ? "mock" : "practice";
-  return <WritingScreen prompt={{ ...PROMPTS[section], run }} view={view} />;
+  if (typeof params.essay !== "string") redirect("/home");
+  return <EssayScreen id={params.essay} view={view} fresh={params.new === "1"} />;
 }
 
-function WritingSkeleton() {
+function EssaySkeleton() {
   return (
     <>
       <AppBarSkeleton />

@@ -14,13 +14,16 @@ import { cn } from "@/lib/utils";
 import { countWords, type Block } from "./blocks";
 import { caretX, isOnLastLine, offsetAtX } from "./caret";
 import { Dictionary } from "./dictionary";
-import { removeDraft, useDraft } from "./draft-store";
+import { removeDraft, useCaret, useDraft } from "./draft-store";
 import { EssayEditor } from "./essay-editor";
+import { EssayTimer } from "./essay-timer";
+import { removeSampleRuns } from "./legacy-storage";
 import { ReviewProgress, ReviewView, useReviewFlow, useReviewProgress, useViewMode, type ViewMode } from "./review";
 
 // The user's own essay: a title (their prompt, or any name) and the text.
-// No exam framing; an empty title and body are the empty state. Review, in
-// the app bar, swaps the editor for the correction view and back.
+// An empty title and body are the empty state. The app bar holds the timer
+// (essay-timer.tsx), and Review, which swaps the editor for the correction
+// view and back.
 //
 // Nothing is saved until something is written (lib/essays.ts): a new essay
 // (`fresh`, from New essay) opens on an id the list doesn't have yet.
@@ -45,6 +48,8 @@ export function EssayScreen({
   const [editable, setEditable] = useState(fresh);
   if (essay && !editable) setEditable(true);
 
+  useEffect(removeSampleRuns, []);
+
   // An unsaved essay leaves no draft behind: on leaving the page in the app
   // (unmount), and on reload or close, which skip unmounting.
   useEffect(() => {
@@ -59,6 +64,8 @@ export function EssayScreen({
   }, [id]);
   const flow = useReviewFlow(id, blocks, essay?.title ?? "", { onFailed: () => setMode("write"), onRetry: review });
   const [mode, setMode] = useViewMode(view, flow, blocks);
+  // Where the writer left the caret, to put it back when the editor returns.
+  const [caret, setCaret] = useCaret(id);
   const progress = useReviewProgress(flow, blocks);
 
   if (essays === null || blocks === null) return <ScreenSkeleton />;
@@ -115,6 +122,7 @@ export function EssayScreen({
           <TruncateWords text={essayTitle({ title })} lang="fr" className="text-text" />
         </p>
         <div className="flex shrink-0 items-center gap-3">
+          <EssayTimer />
           <div className="flex h-4 items-center gap-3 text-label text-text-3">
             {mode === "review" && progress && (
               <>
@@ -175,6 +183,8 @@ export function EssayScreen({
             aria-label="Your essay"
             placeholder="Écrivez ici…"
             autoFocus={!isNew}
+            defaultCaret={caret}
+            onLeave={setCaret}
             onExitTop={focusTitle}
             className="mt-6 max-w-prose min-h-96 pb-40"
           />

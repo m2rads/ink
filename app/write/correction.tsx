@@ -1,12 +1,13 @@
 "use client";
 
-import { RepeatIcon } from "lucide-react";
+import { CornerDownLeftIcon, RepeatIcon } from "lucide-react";
 import { createContext, use, useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import { TruncateWords } from "@/components/truncate-words";
 import { Button } from "@/components/ui/button";
 import { Kbd } from "@/components/ui/kbd";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { CATEGORIES, CATEGORY_LABEL, matchesAccepted, type Category } from "@/lib/ai/correction";
 import { cn } from "@/lib/utils";
 
@@ -16,15 +17,15 @@ import type { MarkStatus } from "./review-store";
 // correction-loop.html?v=3): every mistake numbered in the text, a note per
 // mistake in a column beside its paragraph, chips to filter by category.
 // Clicking a mark or note turns the phrase into an inline input; Enter checks
-// the rewrite. Wrong → feedback and a hint; two wrong → "Show answer". Skip
-// is always there.
+// the rewrite. Wrong → feedback and a hint. "Show answer" is there any time
+// and shows it in the note, never in the text: the writer types it in, or
+// puts it in with the note's icon button. Skip is always there.
 //
 //   <Correction mistakes={…} onCheck={…} onFix={…} onChange={…}>
 //     <Correction.Layout>
 //       {heading}
 //       <Correction.Header>
-//         {status}
-//         <Correction.Aside><Correction.Filters /></Correction.Aside>
+//         <Correction.Aside>{status}<Correction.Filters /></Correction.Aside>
 //       </Correction.Header>
 //       <Correction.Row>
 //         <Correction.Paragraph blockId={b.id} text={b.text} />
@@ -35,10 +36,14 @@ import type { MarkStatus } from "./review-store";
 //
 // The text never moves for a note: where there's room to the right of the
 // essay, Layout places each paragraph's Notes there, beside their paragraph,
-// and a tall open note pushes only the notes below it. Header's status stays
-// above the essay; its Aside (the filters) heads the notes column. Without
-// room (phones, narrow windows) notes fall back into the flow under each
-// paragraph and the Aside under the status. Read-only text with inline inputs, never contenteditable. State that
+// and a tall open note pushes only the notes below it. Interface copy stays
+// out of the essay's column: Header's Aside (status, summary, filters) heads
+// the notes column, level with the top of the layout (the screen's heading),
+// and the header row above the essay takes no room, so the text sits where it
+// did while writing. Something put in Header outside the Aside stays above the
+// essay, with the Aside level with its first line. Without room (phones,
+// narrow windows) notes fall back into the flow under each paragraph and the
+// Aside above the essay. Read-only text with inline inputs, never contenteditable. State that
 // outlives the view (status, attempts) belongs to the caller through
 // onFix/onChange; what's typed and the feedback on it live here.
 
@@ -59,6 +64,8 @@ export type CorrectionMistake = {
   status: MarkStatus;
   attempts: number;
   hinted: boolean;
+  /** The answer is shown in the note; a fix typed after it counts as shown, not fixed. */
+  answered: boolean;
   /** Mistakes of this category in earlier essays. */
   seen: number;
 };
@@ -67,7 +74,7 @@ export type Verdict = { correct: boolean; feedback: string };
 
 type Feedback = { kind: "unchanged" } | { kind: "wrong"; text: string } | { kind: "failed" };
 
-type MistakePatch = Partial<Pick<CorrectionMistake, "status" | "attempts" | "hinted">>;
+type MistakePatch = Partial<Pick<CorrectionMistake, "status" | "attempts" | "hinted" | "answered">>;
 
 // Category color classes, written out so Tailwind sees them. Tints only, at
 // the strengths color.md allows: quiet at rest (/8, underline at 60%), so the
@@ -130,7 +137,10 @@ type ContextValue = {
   focusNext: (from: string) => boolean;
   close: (id: string) => void;
   check: (id: string) => void;
-  reveal: (id: string) => void;
+  /** Show the answer in the note, leaving the essay alone. */
+  answer: (id: string) => void;
+  /** Put the answer into the essay. */
+  apply: (id: string) => void;
   skip: (id: string) => void;
   hint: (id: string) => void;
 };
@@ -268,8 +278,8 @@ function CorrectionRoot({
         const verdict = await onCheck(id, attempt);
         if (verdict.correct) {
           say(id, undefined);
-          announceResolved("Fixed");
-          onFix(id, attempt.trim(), "fixed");
+          announceResolved(m.answered ? "Shown" : "Fixed");
+          onFix(id, attempt.trim(), m.answered ? "revealed" : "fixed");
           advance(id);
         } else {
           say(id, { kind: "wrong", text: verdict.feedback });
@@ -284,7 +294,11 @@ function CorrectionRoot({
         setPendingId(null);
       }
     },
-    reveal(id) {
+    answer(id) {
+      onChange(id, { answered: true });
+      inputs.current.get(id)?.focus({ preventScroll: true });
+    },
+    apply(id) {
       const m = byId(id);
       if (!m) return;
       say(id, undefined);
@@ -508,21 +522,24 @@ function besideFirstLine(aside: HTMLElement, status: Element) {
   return line.top + line.height / 2 - (top - aside.getBoundingClientRect().top) - height / 2;
 }
 
-/** Above the essay: the review's status, and an Aside. */
+/** Holds the Aside: above the essay without room for notes, no room at all with it. */
 function Header({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
       data-slot="correction-header"
-      className={cn("mb-7 grid grid-cols-1 justify-items-start gap-4 font-sans", className)}
+      className={cn(
+        "mb-7 grid grid-cols-1 justify-items-start gap-4 font-sans group-data-[layout=margin]/margin:mb-0",
+        className,
+      )}
       {...props}
     />
   );
 }
 
 /**
- * The header's part that heads the notes column, level with the status, when
- * there's room (the filters, or the review's progress while it runs); under
- * the status otherwise. Notes start below it.
+ * The review's own copy (status, summary, filters, the trace while it runs):
+ * at the head of the notes column when there's room, above the essay
+ * otherwise. Notes start below it.
  */
 function Aside({ className, ...props }: React.ComponentProps<"div">) {
   return <div data-margin-block="aside" className={cn("empty:hidden", IN_MARGIN, className)} {...props} />;
@@ -742,7 +759,7 @@ function Notes({ blockId, className, ...props }: React.ComponentProps<"div"> & {
 const STATUS_LABEL: Record<MarkStatus, string> = { open: "", fixed: "Fixed", revealed: "Shown", skipped: "Skipped" };
 
 function Note({ mistake: m }: { mistake: CorrectionMistake }) {
-  const { activeId, select, check, reveal, skip, hint, pendingId, close, inputs, focusNext } = useCorrection();
+  const { activeId, select, check, answer, skip, hint, pendingId, close, inputs, focusNext } = useCorrection();
   const open = activeId === m.id && m.status === "open";
   const done = resolved(m.status);
   const tone = TONE[m.category];
@@ -837,24 +854,24 @@ function Note({ mistake: m }: { mistake: CorrectionMistake }) {
               </p>
             )}
             <FeedbackFor mistake={m} />
-            {/* gap-3 on touch, where buttons' 44px hit areas would otherwise overlap. */}
-            <div className="mt-4 flex flex-wrap items-center gap-2 pointer-coarse:gap-3">
-              <Button size="sm" onClick={() => check(m.id)} disabled={pending}>
+            {/* Check leads; the two helps follow, quieter, and go once used;
+                Skip, which gives up on the mistake, sits apart at the end.
+                gap-3 on touch, where buttons' 44px hit areas would otherwise overlap. */}
+            <div className="mt-4 flex flex-wrap items-center gap-1.5 pointer-coarse:gap-3">
+              <Button size="xs" onClick={() => check(m.id)} disabled={pending}>
                 {pending ? "Checking…" : "Check"}
               </Button>
-              {m.attempts >= 2 ? (
-                <Button variant="secondary" size="sm" onClick={() => reveal(m.id)} disabled={pending}>
+              {!m.hinted && m.attempts === 0 && !m.answered && (
+                <Button variant="secondary" size="xs" onClick={() => hint(m.id)}>
+                  Hint
+                </Button>
+              )}
+              {!m.answered && (
+                <Button variant="secondary" size="xs" onClick={() => answer(m.id)} disabled={pending}>
                   Show answer
                 </Button>
-              ) : (
-                !m.hinted &&
-                m.attempts === 0 && (
-                  <Button variant="secondary" size="sm" onClick={() => hint(m.id)}>
-                    Hint
-                  </Button>
-                )
               )}
-              <Button variant="ghost" size="sm" onClick={() => skip(m.id)} disabled={pending}>
+              <Button variant="ghost" size="xs" onClick={() => skip(m.id)} disabled={pending} className="ml-auto">
                 Skip
               </Button>
             </div>
@@ -878,9 +895,9 @@ function CategoryTag({ category }: { category: Category }) {
   );
 }
 
-/** What's wrong with the last attempt, then the hint once it's earned or asked for. */
+/** What's wrong with the last attempt, the hint once it's earned or asked for, then the answer once asked for. */
 function FeedbackFor({ mistake: m }: { mistake: CorrectionMistake }) {
-  const { feedback } = useCorrection();
+  const { feedback, apply, pendingId } = useCorrection();
   const fb = feedback[m.id];
   return (
     <div aria-live="polite">
@@ -900,6 +917,34 @@ function FeedbackFor({ mistake: m }: { mistake: CorrectionMistake }) {
           <span className="mr-1 font-medium text-text">Hint</span>
           <Rich text={m.hint} />
         </p>
+      )}
+      {/* Shown, not applied: the writer types it in, or puts it in with the button. */}
+      {m.answered && (
+        <div className="mt-3 flex items-center gap-2 rounded-row bg-sunken py-1 pr-1 pl-2.5 text-ui text-text-2">
+          <p className="min-w-0 flex-1 py-1 text-pretty">
+            <span className="mr-1 font-medium text-text">Answer</span>
+            <em lang="fr" className="font-serif text-text italic">
+              {m.fix}
+            </em>
+          </p>
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  variant="ghost"
+                  size="icon-xs"
+                  aria-label="Put the answer in your essay"
+                  onClick={() => apply(m.id)}
+                  disabled={pendingId === m.id}
+                  className="shrink-0"
+                />
+              }
+            >
+              <CornerDownLeftIcon />
+            </TooltipTrigger>
+            <TooltipContent>Use answer</TooltipContent>
+          </Tooltip>
+        </div>
       )}
     </div>
   );

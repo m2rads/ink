@@ -44,7 +44,7 @@ import { SELECTION_UI, selectionAnchor, useSelection, type Selected } from "./se
 // 1312px of window), the same lookup opens in a sheet from the left, from
 // the app bar's book.
 //
-//   <Dictionary enabled={!mock}>
+//   <Dictionary enabled={mode === "write"}>
 //     <AppBar>… <Dictionary.Trigger /> …</AppBar>
 //     <main className="relative …"><Dictionary.Margin />…</main>
 //   </Dictionary>
@@ -56,7 +56,8 @@ import { SELECTION_UI, selectionAnchor, useSelection, type Selected } from "./se
 //
 // Selecting French in the essay offers the same lookup in place (AGENTS.md,
 // Selection lookup): a "Translate ⌘K" pill above the selection that grows
-// into its meaning when clicked. With words selected, ⌘K translates them
+// into its meaning when clicked. The meaning is fetched as the pill appears,
+// so asking shows it at once. With words selected, ⌘K translates them
 // instead of opening the panel.
 //
 // Wherever a lookup shows French, a speaker button reads it aloud
@@ -141,6 +142,14 @@ function DictionaryRoot({ enabled = true, children }: { enabled?: boolean; child
   const lastField = useRef<HTMLTextAreaElement | null>(null);
   const { selected, readNow, dismiss } = useSelection(enabled);
   const [asked, setAsked] = useState<Selected | null>(null);
+
+  // The meaning starts loading as soon as a selection settles (when the pill
+  // appears), so asking for it shows the answer at once instead of a wait.
+  const prefetchLang = settings?.lang;
+  useEffect(() => {
+    // lookUp takes up to 100 characters; a longer selection fails when asked, as before.
+    if (selected && prefetchLang && selected.term.length <= 100) void fetchAnswer(selected.term, prefetchLang, "from-fr");
+  }, [selected, prefetchLang]);
 
   // Where the writer was, so Escape and ⌘K can take them back.
   useEffect(() => {
@@ -482,6 +491,34 @@ type Answer = { ok: true; translation: string } | { ok: false };
 
 /** Answers fetched this session, so going back to a word doesn't ask again. */
 const answers = new Map<string, Answer>();
+/** Lookups on their way, so a prefetch and the card that shows it share one request. */
+const pending = new Map<string, Promise<Answer>>();
+
+const answerKey = (term: string, lang: LanguageCode, direction: Direction) =>
+  `${lang}:${direction}:${term.toLocaleLowerCase("fr")}`;
+
+/** The answer for `term`: kept, on its way, or asked for now. Failures aren't kept, so asking again retries. */
+function fetchAnswer(term: string, lang: LanguageCode, direction: Direction): Promise<Answer> {
+  const key = answerKey(term, lang, direction);
+  const kept = answers.get(key);
+  if (kept) return Promise.resolve(kept);
+  let request = pending.get(key);
+  if (!request) {
+    request = lookUp({ text: term, lang, direction })
+      .then(({ translation }): Answer => {
+        const answer: Answer = { ok: true, translation };
+        answers.set(key, answer);
+        return answer;
+      })
+      .catch((error: unknown): Answer => {
+        console.error(error);
+        return { ok: false };
+      })
+      .finally(() => pending.delete(key));
+    pending.set(key, request);
+  }
+  return request;
+}
 
 function Result({
   term,
@@ -542,24 +579,16 @@ function Result({
 
 /** The answer for `term`, from this session's answers or a lookup. Key the caller by term. */
 function useAnswer(term: string, lang: LanguageCode, direction: Direction) {
-  const key = `${lang}:${direction}:${term.toLocaleLowerCase("fr")}`;
+  const key = answerKey(term, lang, direction);
   const [answer, setAnswer] = useState<Answer | undefined>(() => answers.get(key));
   const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     if (answers.has(key)) return;
     let current = true;
-    lookUp({ text: term, lang, direction }).then(
-      ({ translation }) => {
-        const next: Answer = { ok: true, translation };
-        answers.set(key, next);
-        if (current) setAnswer(next);
-      },
-      (error: unknown) => {
-        console.error(error);
-        if (current) setAnswer({ ok: false });
-      },
-    );
+    fetchAnswer(term, lang, direction).then((next) => {
+      if (current) setAnswer(next);
+    });
     return () => {
       current = false;
     };

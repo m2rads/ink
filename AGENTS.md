@@ -18,7 +18,7 @@ A web writing editor for people preparing for the TEF writing exam (Expression �
 
 - **User:** TEF candidates who today write against a phone timer, look words up in 3–4 dictionary tabs, then paste the essay into ChatGPT and switch back and forth between their draft and its list of corrections.
 - **Goal is the exam score, not faster practice.** The real exam has no dictionary or AI.
-- **Planned flow:** practice run (timed, lookups allowed) → mock run (timed, no help) → correction → essay history.
+- **The app is two screens:** Home (`/home`) and the essay (`/write?essay=<id>`): write, time yourself if you want, look words up, review, fix. `/` and `/write` without an essay redirect to Home. The sample exam runs (one prompt per section, practice and mock, at bare `/write`) were removed on 2026-10-25; a mock run (timed, no help) would come back as a mode of the essay, not a separate screen.
 - **Why not ChatGPT or LanguageTool:** (1) the writer rewrites each mistake in place and Ink re-checks the fix instead of applying its own; (2) mistakes are remembered by category across essays. Both are required from v1. Without them Ink is a tidier LanguageTool.
 
 ### Correction view: Margin (decided 2026-10-24)
@@ -27,7 +27,7 @@ Reference: `docs/prototypes/correction-loop.html`. Open it in a browser; `?v=3` 
 
 - All mistakes visible at once: numbered highlights in the text, teacher-style notes in a margin column next to each paragraph, filter chips per category (Prepositions, Agreement, Conjugation, Spelling).
 - Clicking a highlight or note turns the phrase into an inline input and expands the note: rule, short explanation, "you've made this N times before".
-- Enter checks the fix. Wrong → feedback and a hint; two wrong → "Show answer". Skip is always available, never a hard stop.
+- Enter checks the fix. Wrong → feedback and a hint. "Show answer" is available any time and shows the answer in the note, not in the text (decided 2026-10-25): the writer types it in, or puts it in with an icon button beside it. A fix after seeing the answer counts as shown, not fixed. Skip is always available, never a hard stop.
 - Rejected:
   - **Guided** (v1): one category at a time with a side panel. Hides the rest of the essay.
   - **Spotlight** (v2): one mistake at a time. Too slow with 13+ mistakes.
@@ -55,7 +55,7 @@ Explored in `/proto/dictionary` in two rounds: where it lives, then how the lang
 - **Placement, Margin:** the dictionary sits in the empty space left of the essay, the mirror of the review's notes on the right. No panel border or scrim; the essay never moves, open or hidden. Hidden, it folds to a "Dictionary ⌘K" button in the same spot. ⌘K (Ctrl+K) opens it or focuses the field; Escape goes back to the essay. It needs about 1312px of window; narrower, the same lookup opens in a sheet from the left (book icon in the app bar).
 - **Language, Pair:** above the field, `[Your language ▾] ⇄ Français`. The left side is what you type; ⇄ swaps. The other side is always French. Your language is a menu, each name in its own script (English names only beside non-Latin scripts).
 - **Search waits for a pause** (300ms) instead of running per keystroke; the previous result stays until then.
-- Practice runs and essays only, never mock runs (no help in exam conditions).
+- In the essay's writing view only, never in review.
 - Rejected:
   - **Docked** column: moves the essay to re-center and takes 320px.
   - **Sheet** as the main form: its scrim hides the sentence you're looking a word up for. Kept only as the narrow-window fallback.
@@ -63,7 +63,7 @@ Explored in `/proto/dictionary` in two rounds: where it lives, then how the lang
   - **Set once** (auto direction, a language code by the title): words spelled the same in both languages come back mixed, and the code is easy to miss.
   - **Ask once** (asked in the empty state, then a "Change" line): an extra first-use step, and the setting is only reachable from the bottom line.
 - **Source, for now: Google Cloud Translation** (`lib/translate.ts`, `lookUp` in `app/write/actions.ts`, key in `GOOGLE_TRANSLATE_API_KEY`). One translation per lookup, no gender, senses or examples; the panel shows only the translation (no source label, no outside links). Google's attribution rules still ask for the results to be marked as Google Translate and for the app's description and help to say so: settle that before launch. Answers are kept for the session in the page only.
-- **Pronunciation:** a speaker button beside the French in every lookup (panel and selection card) reads it aloud through the browser's speech synthesis (`lib/speech.ts`): no key, no request, offline, but the voice is the OS's, so quality varies by device, and devices without a French voice get no button. A recorded or cloud voice (Google Cloud Text-to-Speech, a licensed dictionary's audio) would be the upgrade if the OS voices prove too uneven.
+- **Pronunciation:** a speaker button beside the French in every lookup (panel and selection card) reads it aloud through the browser's speech synthesis (`lib/speech.ts`): no key, no request, offline, but the voice is the OS's, so quality varies by device, and devices without a French voice get no button. macOS also lists its Eloquence character voices (Eddy, Grandma, Rocko…) as French, and they sort first: `lib/speech.ts` ranks them last, after Premium/Enhanced/Natural voices and known good ones (Thomas, Audrey, Amélie, Google français, Microsoft's). A recorded or cloud voice (Google Cloud Text-to-Speech, a licensed dictionary's audio) would be the upgrade if the OS voices prove too uneven.
 - **Not decided:** a real dictionary source. The prototype compares 25 hand-written entries with the Collins API (`app/proto/dictionary/collins/route.ts`, key in `COLLINS_API_KEY`).
   - **Collins API** (terms of 13 February 2025): bilingual dictionaries are free up to 5,000 calls a month, then £75/month to 30,000 and £400/month to 100,000; a commercial product needs their commercial licence. Entries may not be stored or cached, so every lookup waits on Collins, and every use shows "www.collinsdictionary.com © HarperCollins Publishers Ltd 2025".
   - **Licensed data instead of the API:** Collins licenses its bilingual dictionaries (26 languages) as data through collins.licensing@harpercollins.co.uk. That's the route to instant, offline lookups stored in the browser.
@@ -71,9 +71,9 @@ Explored in `/proto/dictionary` in two rounds: where it lives, then how the lang
 
 ### Selection lookup: On ask (decided 2026-10-25)
 
-Explored in a throwaway `/proto/selection` with three directions. Selecting French in the essay (or its title) can show what it means in your language, in a popover at the selection. Built into `<Dictionary>`, so it's on wherever the dictionary is: practice runs and essays, never mock runs or review.
+Explored in a throwaway `/proto/selection` with three directions. Selecting French in the essay (or its title) can show what it means in your language, in a popover at the selection. Built into `<Dictionary>`, so it's on wherever the dictionary is: the essay's writing view, never review.
 
-- **On ask:** a settled selection (on mouse up or a double-click; 350ms after Shift+arrows or touch handles stop) of 1–8 words in one paragraph shows a small "Translate ⌘K" pill above it. The meaning appears only when asked: click the pill or press ⌘K. With French selected, ⌘K translates it; with nothing selected it opens the dictionary as before.
+- **On ask:** a settled selection (on mouse up or a double-click; 350ms after Shift+arrows or touch handles stop) of 1–8 words in one paragraph shows a small "Translate ⌘K" pill above it. The meaning appears only when asked: click the pill or press ⌘K. It's fetched as soon as the pill shows (decided 2026-10-25), so asking feels instant; that's one Google call per settled selection, asked or not, including the many made only to retype. With French selected, ⌘K translates it; with nothing selected it opens the dictionary as before.
 - The pill grows into a card in the same place: the French in Literata italic, then the translation. Neither takes focus, so typing still replaces the selection. Escape or a click elsewhere closes it. Above the selection with a mouse, below it on touch screens (the system's copy/paste menu sits above).
 - The selection widens to whole words ("élétrava" looks up "télétravail"). Same source and session cache as the dictionary (Google Translate, French into your language).
 - Rejected:
@@ -90,12 +90,17 @@ Explored in a throwaway `/proto/selection` with three directions. Selecting Fren
 
 ## Rendering
 
-`cacheComponents` is on in `next.config.ts`, so every page prerenders a static shell. Read request-time data (`searchParams`, `params` without `generateStaticParams`, `cookies()`, `headers()`) inside a `<Suspense>` boundary with a skeleton fallback, never at the top of a page: outside Suspense it blocks the whole route (the dev overlay reports "Next.js encountered runtime data during prerendering"). See `app/write/page.tsx`. Browser-only state (localStorage drafts, the exam clock) goes through `createLocalStore` in `lib/local-store.ts`, which renders `null` on the server and the stored value after hydration.
+`cacheComponents` is on in `next.config.ts`, so every page prerenders a static shell. Read request-time data (`searchParams`, `params` without `generateStaticParams`, `cookies()`, `headers()`) inside a `<Suspense>` boundary with a skeleton fallback, never at the top of a page: outside Suspense it blocks the whole route (the dev overlay reports "Next.js encountered runtime data during prerendering"). See `app/write/page.tsx`. Browser-only state (localStorage drafts, carets, reviews) goes through `createLocalStore` in `lib/local-store.ts`, which renders `null` on the server and the stored value after hydration. Navigating away doesn't unmount a page: Cache Components hides it in React's `<Activity>`, so `useState` survives a trip Home and back while effects clean up and re-run. State that must end when the writer leaves (the timer) resets in a `useLayoutEffect` cleanup; see `essay-timer.tsx`.
+
+### Timer (decided 2026-10-25)
+
+- In the essay's app bar, off until started: a timer icon opens a popover with an optional "Minutes" field. Minutes count down; empty counts up. No sections, presets or exam durations: the writer sets their own.
+- Running, it shows the time with Pause/Resume and Stop. A countdown turns `text-warn` in its last 5 minutes (when it was longer than that) and stops itself at 0:00; a count-up stops itself after 4 hours. Either way a toast says so. The essay never locks.
+- It lives in the page only (`essay-timer.tsx`, never storage): closing the window or leaving the essay ends it. The old sample runs' clocks kept counting in localStorage for days; `legacy-storage.ts` clears them, and everything else those runs left behind, on opening an essay.
 
 ### Review (decided 2026-10-24)
 
-- **On demand:** a Review button in the app bar, any time. The editor can't know when writing is done. It swaps the editor for Margin; "Edit" swaps back (exam runs: "Back").
-- **Mock runs hand in:** in a running mock run, Review first asks to hand the essay in (the clock stops, the essay locks), since feedback mid-run would break exam conditions.
+- **On demand:** a Review button in the app bar, any time. The editor can't know when writing is done. It swaps the editor for Margin; "Edit" swaps back.
 - **One review per essay:** reviewing unchanged text reopens the last review (no new call); reviewing changed text replaces it, because edits move the text and old marks would point at the wrong words. Fixes made in the review are written into the essay in place and don't count as changes.
 - **Memory counts each essay once**, by category, from its latest review, so reviewing three times doesn't inflate "you've made N … mistakes in earlier essays".
 
