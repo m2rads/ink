@@ -16,7 +16,8 @@
  *   louder than another. All pass as 12px text on --surface.
  */
 :root {
-  color-scheme: light dark;
+  /* Native controls, scrollbars and the canvas follow the theme. */
+  color-scheme: light;
 
   /* Surfaces, lowest to highest. */
   --bg: oklch(0.995 0.002 257.85);
@@ -219,55 +220,59 @@
  * wider than light's 0.015, because near black smaller gaps crush together
  * on real displays. --sunken sits above --surface here: on a dark canvas,
  * fills and hovers lift.
+ *
+ * The theme is html's data-theme, "light" or "dark", set before first paint
+ * by the script in app/layout.tsx from the writer's choice (lib/theme.ts),
+ * or from the OS while they leave it on System.
  */
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: oklch(0.07 0.006 257.85);
-    --surface: oklch(0.17 0.004 257.85);
-    --sunken: oklch(0.19 0.004 257.85);
-    --raised: oklch(0.23 0.005 257.85);
+:root[data-theme="dark"] {
+  color-scheme: dark;
 
-    /* One step off white (16:1 on --bg, from 19.7): pure white on near
-       black glares. The lower steps move with it to keep their spacing;
-       --text-3 is still 6.3:1 on --raised. */
-    --text: oklch(0.91 0.004 257.85);
-    --text-2: oklch(0.8 0.012 257.85);
-    --text-3: oklch(0.7 0.013 257.85);
+  --bg: oklch(0.07 0.006 257.85);
+  --surface: oklch(0.17 0.004 257.85);
+  --sunken: oklch(0.19 0.004 257.85);
+  --raised: oklch(0.23 0.005 257.85);
 
-    --border: oklch(0.27 0.008 257.85);
-    --border-strong: oklch(0.37 0.01 257.85);
+  /* One step off white (16:1 on --bg, from 19.7): pure white on near
+     black glares. The lower steps move with it to keep their spacing;
+     --text-3 is still 6.3:1 on --raised. */
+  --text: oklch(0.91 0.004 257.85);
+  --text-2: oklch(0.8 0.012 257.85);
+  --text-3: oklch(0.7 0.013 257.85);
 
-    --primary-hover: oklch(0.85 0.008 257.85);
+  --border: oklch(0.27 0.008 257.85);
+  --border-strong: oklch(0.37 0.01 257.85);
 
-    /* Just over 3:1 on every dark surface (3.34); a ring as light as the text grays glowed. */
-    --focus-ring: oklch(0.54 0.012 257.85);
+  --primary-hover: oklch(0.85 0.008 257.85);
 
-    /* Stronger than light's: a faint scrim disappears on a near-black page. */
-    --scrim: oklch(0 0 0 / 0.55);
+  /* Just over 3:1 on every dark surface (3.34); a ring as light as the text grays glowed. */
+  --focus-ring: oklch(0.54 0.012 257.85);
 
-    --tooltip: oklch(0.3 0.008 257.85);
-    --tooltip-fg: oklch(0.98 0.002 257.85);
+  /* Stronger than light's: a faint scrim disappears on a near-black page. */
+  --scrim: oklch(0 0 0 / 0.55);
 
-    /* The edge sits between --border and --border-strong so it still shows
-       on --raised (0.23), where --border (0.27) nearly vanishes. */
-    --elevation-raised: 0 0 0 1px oklch(0.3 0.008 257.85);
-    --elevation-overlay: 0 0 0 1px oklch(0.32 0.01 257.85),
-      0 8px 24px oklch(0 0 0 / 0.5);
-    --elevation-modal: 0 0 0 1px oklch(0.32 0.01 257.85),
-      0 24px 64px oklch(0 0 0 / 0.6);
+  --tooltip: oklch(0.3 0.008 257.85);
+  --tooltip-fg: oklch(0.98 0.002 257.85);
 
-    /* Lighter on hover, but not as light as blue-500: white text there
-       drops below 4.5:1. */
-    --brand-hover: oklch(0.555 0.192 257.85);
+  /* The edge sits between --border and --border-strong so it still shows
+     on --raised (0.23), where --border (0.27) nearly vanishes. */
+  --elevation-raised: 0 0 0 1px oklch(0.3 0.008 257.85);
+  --elevation-overlay: 0 0 0 1px oklch(0.32 0.01 257.85),
+    0 8px 24px oklch(0 0 0 / 0.5);
+  --elevation-modal: 0 0 0 1px oklch(0.32 0.01 257.85),
+    0 24px 64px oklch(0 0 0 / 0.6);
 
-    --ok: oklch(0.8 0.158 155);
-    --warn: oklch(0.8 0.098 45);
+  /* Lighter on hover, but not as light as blue-500: white text there
+     drops below 4.5:1. */
+  --brand-hover: oklch(0.555 0.192 257.85);
 
-    --c-prep: oklch(0.8 0.087 245);
-    --c-accord: oklch(0.8 0.101 305);
-    --c-conj: oklch(0.8 0.13 70);
-    --c-ortho: oklch(0.8 0.092 20);
-  }
+  --ok: oklch(0.8 0.158 155);
+  --warn: oklch(0.8 0.098 45);
+
+  --c-prep: oklch(0.8 0.087 245);
+  --c-accord: oklch(0.8 0.101 305);
+  --c-conj: oklch(0.8 0.13 70);
+  --c-ortho: oklch(0.8 0.092 20);
 }
 
 /* Wide-gamut screens get the brand's full chroma, same L and H. */
@@ -278,8 +283,8 @@
   }
 }
 
-@media (color-gamut: p3) and (prefers-color-scheme: dark) {
-  :root {
+@media (color-gamut: p3) {
+  :root[data-theme="dark"] {
     --brand-hover: oklch(0.555 0.226 257.85);
   }
 }
@@ -329,13 +334,16 @@
     cursor: pointer;
   }
 
+  /* The page color goes on html, not only body: html's background paints the
+     whole window (the canvas), including below short pages and in the
+     overscroll bounce. */
   html {
+    background: var(--bg);
     font-synthesis: none;
     -webkit-text-size-adjust: 100%;
   }
 
   body {
-    background: var(--bg);
     color: var(--text);
     font-family: var(--font-sans);
     font-size: var(--text-body);

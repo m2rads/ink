@@ -47,6 +47,7 @@ Does the user trigger an action?
 
 Built, in `app/home/` and `components/`:
 - **`AppSidebar`** (`components/app-sidebar.tsx`, on shadcn's `Sidebar`, `collapsible="offcanvas"`): the logo, New essay (`outline`, because the page owns the primary action), then every essay as one flat list, most recently edited first. Don't add sections, groups, a user footer or nav items without a decision; it was cut down on purpose. On phones it's a sheet behind `SidebarTrigger`.
+- **`ThemeMenu`** (`app/home/home-screen.tsx`): Light / Dark / System, a ghost icon button at the right of Home's bar. Only there: the theme is set rarely, and the writing screens' bars stay quiet. `setTheme()` and `useTheme()` from `lib/theme.ts`; never read `prefers-color-scheme` for colors directly.
 - **`ContributionGraph`** (`app/home/contribution-graph.tsx`): the year of essays, 53 weeks ending today, cells sized to the column (`rounded-cell`, five `bg-text/*` levels), hover detail in the caption. Data is one `{ date, words }` per essay, in the user's local days.
 - **Essays** (`lib/essays.ts`): `useEssays()`, `useStartEssay()` (opens `/write?essay=<id>&new=1` on a blank page and saves nothing), `saveEssay()` / `removeEssay()`. An essay is saved only once its title or text has something in it (`hasWriting`), and removed again if cleared back to nothing; its draft goes too when the page closes. Starting an essay never asks anything first: no form, dialog or popover.
 

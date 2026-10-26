@@ -1,6 +1,6 @@
 # Color
 
-Source: `app/globals.css`. Every color is a semantic OKLCH token with a light and a dark value; the dark values switch automatically with `prefers-color-scheme`. Use the Tailwind utility (`bg-surface`, `text-text-2`, `border-border`), or `var(--surface)` in CSS. Never hex, `rgb()`, `oklch()`, arbitrary values, or `dark:` overrides: the tokens already flip.
+Source: `app/globals.css`. Every color is a semantic OKLCH token with a light and a dark value; the dark values apply under `html[data-theme="dark"]`, which `lib/theme.ts` sets from the writer's choice (Light, Dark or System, which follows `prefers-color-scheme`) before first paint. The page color is on `html`, so it fills the whole window. Use the Tailwind utility (`bg-surface`, `text-text-2`, `border-border`), or `var(--surface)` in CSS. Never hex, `rgb()`, `oklch()`, arbitrary values, or `dark:` overrides: the tokens already flip.
 
 Tailwind's palette is deleted (`--color-*: initial`). `bg-white`, `text-black`, `bg-zinc-50`, `text-blue-600` produce **no CSS and no error**; the element just loses its color.
 

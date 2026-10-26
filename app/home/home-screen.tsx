@@ -1,16 +1,27 @@
 "use client";
 
-import { PenLineIcon } from "lucide-react";
+import { PenLineIcon, SunMoonIcon } from "lucide-react";
 import Link from "next/link";
 import { useMemo, useSyncExternalStore } from "react";
 
 import { AppSidebar } from "@/components/app-sidebar";
 import { TruncateWords } from "@/components/truncate-words";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Separator } from "@/components/ui/separator";
 import { SidebarInset, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { essayHref, essayTitle, localDay, useEssays, useStartEssay, type EssayMeta } from "@/lib/essays";
+import { setTheme, useThemeChoice, type ThemeChoice } from "@/lib/theme";
 
 import { ContributionGraph, currentStreak, type Activity } from "./contribution-graph";
 
@@ -36,6 +47,7 @@ export function HomeScreen() {
           <SidebarTrigger className="-ml-1" />
           <Separator orientation="vertical" className="h-4 data-vertical:self-center" />
           <h1 className="text-label font-medium">Home</h1>
+          <ThemeMenu className="ml-auto -mr-1" />
         </header>
 
         <main className="px-4 py-12 sm:px-10">
@@ -114,6 +126,38 @@ function Recent({ essays }: { essays: EssayMeta[] | null }) {
         ))}
       </ul>
     </section>
+  );
+}
+
+// The theme is chosen rarely, so it lives here rather than in the writing
+// screens' bars, where chrome stays out of the essay's way.
+function ThemeMenu({ className }: { className?: string }) {
+  const choice = useThemeChoice();
+  return (
+    <DropdownMenu>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <DropdownMenuTrigger
+              render={<Button variant="ghost" size="icon-sm" aria-label="Theme" className={className} />}
+            />
+          }
+        >
+          <SunMoonIcon />
+        </TooltipTrigger>
+        <TooltipContent>Theme</TooltipContent>
+      </Tooltip>
+      <DropdownMenuContent align="end" className="w-40">
+        <DropdownMenuGroup>
+          <DropdownMenuLabel>Theme</DropdownMenuLabel>
+          <DropdownMenuRadioGroup value={choice ?? "system"} onValueChange={(v) => setTheme(v as ThemeChoice)}>
+            <DropdownMenuRadioItem value="light">Light</DropdownMenuRadioItem>
+            <DropdownMenuRadioItem value="dark">Dark</DropdownMenuRadioItem>
+            <DropdownMenuRadioItem value="system">System</DropdownMenuRadioItem>
+          </DropdownMenuRadioGroup>
+        </DropdownMenuGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 

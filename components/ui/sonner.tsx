@@ -1,13 +1,15 @@
 "use client"
 
 import { Toaster as Sonner, type ToasterProps } from "sonner"
+import { useTheme } from "@/lib/theme"
 import { CircleCheckIcon, InfoIcon, TriangleAlertIcon, OctagonXIcon, Loader2Icon } from "lucide-react"
 
-// Ink follows the OS theme through CSS, so "system" is enough; no next-themes.
+// Follows Ink's theme (lib/theme.ts), which can differ from the OS's.
 const Toaster = ({ ...props }: ToasterProps) => {
+  const theme = useTheme()
   return (
     <Sonner
-      theme="system"
+      theme={theme ?? "system"}
       className="toaster group"
       icons={{
         success: (

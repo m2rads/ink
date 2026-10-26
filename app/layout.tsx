@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Inter, Literata } from "next/font/google";
 import { Toaster } from "@/components/ui/sonner";
+import { THEME_SCRIPT } from "@/lib/theme-script";
 
 import "./globals.css";
 
@@ -29,7 +30,15 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     <html
       lang="en"
       className={`${inter.variable} ${literata.variable} h-full antialiased`}
+      // THEME_SCRIPT sets data-theme before React hydrates.
+      suppressHydrationWarning
     >
+      <head>
+        {/* Inline and blocking, so the theme is set before the first paint.
+            next/script's beforeInteractive runs inline code only after
+            Next's own scripts load, which is after paint: a flash. */}
+        <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
+      </head>
       <body className="min-h-full flex flex-col">
         {children}
         <Toaster />
