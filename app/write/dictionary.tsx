@@ -1,7 +1,7 @@
 "use client";
 
 import { Popover as PopoverPrimitive } from "@base-ui/react/popover";
-import { ArrowRightLeftIcon, BookOpenTextIcon, ChevronDownIcon, LanguagesIcon, XIcon } from "lucide-react";
+import { ArrowRightLeftIcon, BookOpenTextIcon, ChevronDownIcon, LanguagesIcon, Volume2Icon, XIcon } from "lucide-react";
 import {
   createContext,
   use,
@@ -30,6 +30,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { LANGUAGE_CODES, LANGUAGES, language, type LanguageCode } from "@/lib/languages";
 import { createLocalStore } from "@/lib/local-store";
+import { speakFrench, useCanSpeakFrench } from "@/lib/speech";
 import { cn } from "@/lib/utils";
 
 import { lookUp } from "./actions";
@@ -57,6 +58,9 @@ import { SELECTION_UI, selectionAnchor, useSelection, type Selected } from "./se
 // Selection lookup): a "Translate ⌘K" pill above the selection that grows
 // into its meaning when clicked. With words selected, ⌘K translates them
 // instead of opening the panel.
+//
+// Wherever a lookup shows French, a speaker button reads it aloud
+// (lib/speech.ts, the browser's own French voice).
 
 const WIDE = "(min-width: 1312px)";
 const DEBOUNCE_MS = 300;
@@ -524,9 +528,13 @@ function Result({
           No translation for “<span dir="auto">{term}</span>”. Check the spelling, or swap the languages.
         </p>
       ) : (
-        <p lang={target} dir="auto" className={cn("text-title text-balance", target === "fr" && "font-serif")}>
-          {answer.translation}
-        </p>
+        <div className="flex items-start justify-between gap-2">
+          <p lang={target} dir="auto" className={cn("text-title text-balance", target === "fr" && "font-serif")}>
+            {answer.translation}
+          </p>
+          {/* The French side: the answer when translating into French, else what was typed. */}
+          <Listen text={target === "fr" ? answer.translation : term} className="-mr-1.5 -my-0.5" />
+        </div>
       )}
     </div>
   );
@@ -622,9 +630,12 @@ function SelectionLookup({
             {held &&
               (held.asked ? (
                 <>
-                  <p lang="fr" className="font-serif text-label text-text-3 italic">
-                    {held.selected.term}
-                  </p>
+                  <div className="flex items-center justify-between gap-3">
+                    <p lang="fr" className="font-serif text-label text-text-3 italic">
+                      {held.selected.term}
+                    </p>
+                    <Listen text={held.selected.term} className="-my-1.5 -mr-1.5" />
+                  </div>
                   <SelectionMeaning key={`${settings.lang}:${held.selected.term}`} term={held.selected.term} lang={settings.lang} />
                 </>
               ) : (
@@ -669,6 +680,30 @@ function SelectionMeaning({ term, lang }: { term: string; lang: LanguageCode }) 
         </p>
       )}
     </div>
+  );
+}
+
+/** Reads `text` aloud in French; nothing where the browser has no French voice. */
+function Listen({ text, className }: { text: string; className?: string }) {
+  const canSpeak = useCanSpeakFrench();
+  if (!canSpeak) return null;
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <Button
+            variant="ghost"
+            size="icon-xs"
+            aria-label={`Listen to “${text}”`}
+            onClick={() => speakFrench(text)}
+            className={className}
+          />
+        }
+      >
+        <Volume2Icon />
+      </TooltipTrigger>
+      <TooltipContent>Listen</TooltipContent>
+    </Tooltip>
   );
 }
 
