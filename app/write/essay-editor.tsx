@@ -19,10 +19,13 @@ import { cn } from "@/lib/utils";
 import {
   createBlock,
   insertText,
+  isBefore,
   mergeWithNext,
   mergeWithPrevious,
   moveBlock,
+  replaceRange,
   splitBlock,
+  textBetween,
   type Block,
   type Caret,
   type Edit,
@@ -33,6 +36,14 @@ import { caretX, isOnFirstLine, isOnLastLine, offsetAtX } from "./caret";
 // text only, so the browser handles typing, accents, IME and selection inside
 // a paragraph; this component handles everything that crosses paragraphs
 // (Enter, Backspace/Delete at the edges, arrows, paste, reordering) and undo.
+//
+// A selection can't span textareas, so one that crosses paragraphs (⌘A,
+// Shift+arrows past an edge, Shift+click, dragging out of a paragraph) swaps
+// the textareas for plain <p>s with the same text metrics and uses the
+// browser's own selection on them: it looks and copies like any page text.
+// Typing, deleting or pasting replaces it (replaceRange) and the textareas
+// come back; a selection that shrinks back into one paragraph, or a click,
+// lands in that paragraph's textarea. Never contenteditable.
 
 type Snapshot = { blocks: Block[]; caret: Caret };
 
@@ -56,6 +67,19 @@ const DRAG_THRESHOLD_PX = 4;
 const SCROLL_EDGE_TOP_PX = 120;
 const SCROLL_EDGE_BOTTOM_PX = 64;
 
+/** Entering the cross-paragraph selection: where it starts, and how to reach its other end. */
+type SpanSetup = {
+  anchor: Caret;
+  focus?: Caret;
+  /** Extend to the text under this point (Shift+click, a drag). */
+  pointer?: { x: number; y: number };
+  /** Then move the end like Shift+arrow would. */
+  extend?: { direction: "forward" | "backward"; granularity: "character" | "word" | "line" };
+};
+
+/** A selection to restore inside one paragraph's textarea. */
+type Landing = { blockId: string; start: number; end: number; backward: boolean };
+
 /**
  * Save `before` as an undo step. Keystrokes in the same paragraph without a
  * pause extend the current step instead (`typingIn` is that paragraph).
@@ -72,10 +96,10 @@ function recordStep(h: History, before: Snapshot, typingIn?: string) {
   h.typing = typingIn ? { blockId: typingIn, at: now } : null;
 }
 
-// Writing help the real exam doesn't have: browser spellcheck and
-// autocorrect, and the Grammarly and LanguageTool extensions.
+// Writing help Ink leaves off: autocorrect (a word changed for the writer
+// isn't a mistake they fixed) and the Grammarly and LanguageTool extensions.
+// Spellcheck is the `spellCheck` prop.
 const NO_WRITING_HELP = {
-  spellCheck: false,
   autoCorrect: "off",
   autoCapitalize: "off",
   autoComplete: "off",
@@ -95,6 +119,8 @@ type EssayEditorProps = Omit<React.ComponentProps<"div">, "defaultValue" | "onCh
   autoFocus?: boolean;
   /** Locks the text and its order (time's up, paused). The caret can still move and select. */
   readOnly?: boolean;
+  /** The browser's spellcheck, in the editor's `lang` (French). Off in mock runs: the exam has none. */
+  spellCheck?: boolean;
   /**
    * ↑ on the first line or ← at the very start of the first paragraph: move
    * focus to whatever sits above the essay (the title). `x` is the caret's
@@ -110,6 +136,7 @@ export function EssayEditor({
   placeholder,
   autoFocus = false,
   readOnly = false,
+  spellCheck = true,
   onExitTop,
   lang = "fr",
   className,
@@ -137,7 +164,20 @@ export function EssayEditor({
   const [tabStopId, setTabStopId] = useState<string | null>(null);
   const tabStop = blocks.some((b) => b.id === tabStopId) ? tabStopId : blocks[0]?.id;
 
+  // The cross-paragraph selection (see the top of the file): the <p>s that
+  // stand in for the textareas, its fixed end, and what to do on entering
+  // and leaving it.
+  const [spanning, setSpanning] = useState(false);
+  const spanningNow = useRef(false);
+  const paragraphs = useRef(new Map<string, HTMLParagraphElement>());
+  const spanSetup = useRef<SpanSetup | null>(null);
+  const spanAnchor = useRef<Caret | null>(null);
+  const landing = useRef<Landing | null>(null);
+  const dragSelecting = useRef(false);
+
   function commit(next: Block[], caret: Caret | null) {
+    // Any edit puts the textareas back to type in.
+    setSpanning(false);
     pendingCaret.current = caret;
     if (value === undefined) setUncontrolled(next);
     onValueChange?.(next);
@@ -204,6 +244,287 @@ export function EssayEditor({
     focusAt(pendingCaret.current);
     pendingCaret.current = null;
   });
+
+  // Entering the cross-paragraph selection: once the <p>s are in, select
+  // from the anchor to its other end and take focus, so keys and copy come here.
+  useLayoutEffect(() => {
+    spanningNow.current = spanning;
+    const setup = spanSetup.current;
+    if (!spanning || !setup) return;
+    spanSetup.current = null;
+    rootRef.current?.focus({ preventScroll: true });
+    const focus = (setup.pointer && caretAtPoint(setup.pointer.x, setup.pointer.y)) || setup.focus || setup.anchor;
+    select(setup.anchor, focus);
+    if (setup.extend) {
+      getSelection()?.modify("extend", setup.extend.direction, setup.extend.granularity);
+      settleSpan();
+    }
+  });
+
+  // Leaving it for one paragraph: restore the selection in its textarea.
+  useLayoutEffect(() => {
+    const to = landing.current;
+    if (spanning || !to) return;
+    landing.current = null;
+    const el = textareas.current.get(to.blockId);
+    if (!el) return;
+    el.focus({ preventScroll: true });
+    el.setSelectionRange(to.start, to.end, to.backward ? "backward" : "forward");
+  });
+
+  function beginSpan(setup: SpanSetup) {
+    spanSetup.current = setup;
+    spanAnchor.current = setup.anchor;
+    history.current.typing = null;
+    setSpanning(true);
+  }
+
+  function land(to: Landing) {
+    landing.current = to;
+    setSpanning(false);
+  }
+
+  function selectAll() {
+    const last = blocks[blocks.length - 1];
+    const anchor = { blockId: blocks[0].id, offset: 0 };
+    const focus = { blockId: last.id, offset: last.text.length };
+    if (spanningNow.current) {
+      spanAnchor.current = anchor;
+      select(anchor, focus);
+    } else {
+      beginSpan({ anchor, focus });
+    }
+  }
+
+  /** Select between two carets on the <p>s. */
+  function select(anchor: Caret, focus: Caret) {
+    const a = domPoint(anchor);
+    const f = domPoint(focus);
+    if (a && f) getSelection()?.setBaseAndExtent(a.node, a.offset, f.node, f.offset);
+  }
+
+  function domPoint({ blockId, offset }: Caret) {
+    const p = paragraphs.current.get(blockId);
+    if (!p) return null;
+    const text = p.firstChild;
+    return text?.nodeType === Node.TEXT_NODE
+      ? { node: text, offset: Math.min(offset, text.textContent?.length ?? 0) }
+      : { node: p as Node, offset: 0 };
+  }
+
+  /** A DOM selection point as a caret in the essay; points outside it clamp to its start or end. */
+  function toCaret(node: Node | null, offset: number): Caret | null {
+    const root = rootRef.current;
+    if (!root || !node) return null;
+    const last = blocks[blocks.length - 1];
+    const start = { blockId: blocks[0].id, offset: 0 };
+    const end = { blockId: last.id, offset: last.text.length };
+    if (!root.contains(node)) {
+      return root.compareDocumentPosition(node) & Node.DOCUMENT_POSITION_PRECEDING ? start : end;
+    }
+    const el = node instanceof Element ? node : node.parentElement;
+    const p = el?.closest<HTMLElement>("[data-block]");
+    if (p) {
+      const id = p.dataset.block!;
+      const length = blocks.find((b) => b.id === id)?.text.length ?? 0;
+      const at = node.nodeType === Node.TEXT_NODE ? Math.min(offset, length) : offset === 0 ? 0 : length;
+      return { blockId: id, offset: at };
+    }
+    // Between paragraphs: the start of the paragraph whose wrapper it's in,
+    // or of the next one when it's on the root.
+    const wrapper = el?.closest<HTMLElement>("[data-wrapper]");
+    if (wrapper) return { blockId: wrapper.dataset.wrapper!, offset: 0 };
+    const next = blocks[offset];
+    return node === root && next ? { blockId: next.id, offset: 0 } : end;
+  }
+
+  /** The caret under a point on screen; above or below the essay, its start or end. */
+  function caretAtPoint(x: number, y: number): Caret | null {
+    const box = rootRef.current?.getBoundingClientRect();
+    if (!box) return null;
+    const last = blocks[blocks.length - 1];
+    if (y < box.top) return { blockId: blocks[0].id, offset: 0 };
+    if (y > box.bottom) return { blockId: last.id, offset: last.text.length };
+    const point = pointAt(x, y);
+    return point ? toCaret(point.node, point.offset) : null;
+  }
+
+  /** The browser's selection as essay carets, in reading order. */
+  function spanRange() {
+    const sel = getSelection();
+    if (!sel?.anchorNode) return null;
+    const anchor = toCaret(sel.anchorNode, sel.anchorOffset);
+    const focus = toCaret(sel.focusNode, sel.focusOffset);
+    if (!anchor || !focus) return null;
+    const forward = !isBefore(blocks, focus, anchor);
+    return { anchor, focus, forward, start: forward ? anchor : focus, end: forward ? focus : anchor };
+  }
+
+  /** A selection back inside one paragraph (or a click) goes back to its textarea. */
+  function settleSpan() {
+    const r = spanRange();
+    if (r && r.start.blockId === r.end.blockId) {
+      land({ blockId: r.start.blockId, start: r.start.offset, end: r.end.offset, backward: !r.forward });
+    }
+  }
+
+  /** Type over, delete or paste onto the cross-paragraph selection. */
+  function replaceSpan(text: string, thenSplit = false) {
+    const r = spanRange();
+    if (!r || readOnly) return;
+    let edit = replaceRange(blocks, r.start, r.end, text);
+    if (thenSplit) edit = splitBlock(edit.blocks, edit.caret.blockId, edit.caret.offset, edit.caret.offset);
+    remember(r.start);
+    commit(edit.blocks, edit.caret);
+  }
+
+  function onSpanKeyDown(e: React.KeyboardEvent<HTMLDivElement>) {
+    if (!spanning || e.target !== e.currentTarget || e.nativeEvent.isComposing) return;
+    const r = spanRange();
+    if (!r) return;
+    const mod = e.metaKey || e.ctrlKey;
+    const key = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+
+    if (mod && !e.altKey && key === "a") {
+      e.preventDefault();
+      selectAll();
+      return;
+    }
+    if (mod && !e.altKey && (key === "z" || (key === "y" && e.ctrlKey && !e.metaKey))) {
+      e.preventDefault();
+      if (!readOnly) travel(key === "z" && !e.shiftKey ? "undo" : "redo");
+      return;
+    }
+
+    if (key.startsWith("Arrow")) {
+      e.preventDefault();
+      const back = key === "ArrowLeft" || key === "ArrowUp";
+      if (e.shiftKey) {
+        const vertical = key === "ArrowUp" || key === "ArrowDown";
+        const granularity = mod ? (vertical ? "documentboundary" : "lineboundary") : e.altKey ? "word" : vertical ? "line" : "character";
+        getSelection()?.modify("extend", back ? "backward" : "forward", granularity);
+        settleSpan();
+      } else {
+        const at = back ? r.start : r.end;
+        land({ blockId: at.blockId, start: at.offset, end: at.offset, backward: false });
+      }
+      return;
+    }
+    if (key === "Escape") {
+      e.preventDefault();
+      land({ blockId: r.focus.blockId, start: r.focus.offset, end: r.focus.offset, backward: false });
+      return;
+    }
+    // ⌘C, ⌘X and ⌘V arrive as copy, cut and paste; other shortcuts pass.
+    if (mod) return;
+
+    if (key === "Backspace" || key === "Delete" || key === "Dead") {
+      // A dead key (an accent about to be typed) can't compose over a
+      // selection here, so it only clears it; the next letter types normally.
+      e.preventDefault();
+      replaceSpan("");
+    } else if (key === "Enter") {
+      if (e.altKey) return;
+      e.preventDefault();
+      replaceSpan("", true);
+    } else if (e.key.length === 1) {
+      e.preventDefault();
+      replaceSpan(e.key);
+    }
+  }
+
+  function onSpanCopy(e: React.ClipboardEvent<HTMLDivElement>, cut: boolean) {
+    if (!spanning) return;
+    const r = spanRange();
+    if (!r) return;
+    e.preventDefault();
+    e.clipboardData.setData("text/plain", textBetween(blocks, r.start, r.end));
+    if (cut) replaceSpan("");
+  }
+
+  function onSpanPaste(e: React.ClipboardEvent<HTMLDivElement>) {
+    if (!spanning) return;
+    const text = e.clipboardData.getData("text/plain");
+    if (!text) return;
+    e.preventDefault();
+    replaceSpan(text);
+  }
+
+  /** The fixed end of the textarea selection that has focus. */
+  function selectionAnchor(): Caret | null {
+    for (const [blockId, el] of textareas.current) {
+      if (el === document.activeElement) {
+        return { blockId, offset: el.selectionDirection === "backward" ? el.selectionEnd : el.selectionStart };
+      }
+    }
+    return null;
+  }
+
+  // Shift+click in another paragraph selects from the caret to there.
+  function onTextMouseDown(block: Block, e: React.MouseEvent<HTMLTextAreaElement>) {
+    if (e.button !== 0 || !e.shiftKey) return;
+    const anchor = selectionAnchor();
+    if (!anchor || anchor.blockId === block.id) return;
+    e.preventDefault();
+    beginSpan({ anchor, pointer: { x: e.clientX, y: e.clientY } });
+  }
+
+  // Selecting with the mouse is the textarea's own until the pointer leaves
+  // its paragraph; from then the selection follows the pointer across them.
+  function onTextPointerDown(block: Block, e: React.PointerEvent<HTMLTextAreaElement>) {
+    if (e.button !== 0 || e.pointerType === "touch" || e.shiftKey) return;
+    const onMove = (ev: PointerEvent) => {
+      if (!(ev.buttons & 1)) return stop();
+      const box = wrappers.current.get(block.id)?.getBoundingClientRect();
+      if (!box || (ev.clientY >= box.top && ev.clientY <= box.bottom)) return;
+      const el = textareas.current.get(block.id);
+      stop();
+      if (!el) return;
+      const anchor = { blockId: block.id, offset: el.selectionDirection === "backward" ? el.selectionEnd : el.selectionStart };
+      dragSelect(anchor, ev.clientX, ev.clientY);
+    };
+    const stop = () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", stop);
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", stop);
+  }
+
+  function dragSelect(anchor: Caret, x: number, y: number) {
+    dragSelecting.current = true;
+    beginSpan({ anchor, pointer: { x, y } });
+    let pointer = { x, y };
+    // Each frame, after the browser's own handling of the move: scroll near
+    // the edges, then select from the anchor to the text under the pointer.
+    const follow = () => {
+      const speed =
+        pointer.y < SCROLL_EDGE_TOP_PX
+          ? -(SCROLL_EDGE_TOP_PX - pointer.y) / 4
+          : pointer.y > window.innerHeight - SCROLL_EDGE_BOTTOM_PX
+            ? (pointer.y - (window.innerHeight - SCROLL_EDGE_BOTTOM_PX)) / 4
+            : 0;
+      if (speed) window.scrollBy(0, speed);
+      const focus = caretAtPoint(pointer.x, pointer.y);
+      if (focus && spanAnchor.current && spanningNow.current) select(spanAnchor.current, focus);
+      frame = requestAnimationFrame(follow);
+    };
+    let frame = requestAnimationFrame(follow);
+    const onMove = (ev: PointerEvent) => {
+      pointer = { x: ev.clientX, y: ev.clientY };
+    };
+    const onUp = () => {
+      cancelAnimationFrame(frame);
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onUp);
+      dragSelecting.current = false;
+      settleSpan();
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onUp);
+  }
 
   // After a reorder, slide every paragraph from where it was to where it is
   // now (FLIP). A drop settles the dragged paragraph into its slot; moves from
@@ -303,6 +624,38 @@ export function EssayEditor({
 
     // Locked: arrows and selection still work; nothing that changes text does.
     if (readOnly && ["Enter", "Backspace", "Delete"].includes(e.key)) return;
+
+    // ⌘A / Ctrl+A selects the whole essay, not just this paragraph.
+    if (mod && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "a" && blocks.length > 1) {
+      e.preventDefault();
+      selectAll();
+      return;
+    }
+
+    // Shift+arrow past a paragraph's edge carries the selection into the next one.
+    if (e.shiftKey && !mod && e.key.startsWith("Arrow")) {
+      const backward = el.selectionDirection === "backward";
+      const anchor = { blockId: block.id, offset: backward ? end : start };
+      const focus = { blockId: block.id, offset: backward ? start : end };
+      const crosses =
+        (e.key === "ArrowDown" && next && isOnLastLine(el, focus.offset)) ||
+        (e.key === "ArrowUp" && prev && isOnFirstLine(el, focus.offset)) ||
+        (e.key === "ArrowRight" && next && focus.offset === block.text.length) ||
+        (e.key === "ArrowLeft" && prev && focus.offset === 0);
+      if (crosses) {
+        e.preventDefault();
+        const vertical = e.key === "ArrowDown" || e.key === "ArrowUp";
+        beginSpan({
+          anchor,
+          focus,
+          extend: {
+            direction: e.key === "ArrowDown" || e.key === "ArrowRight" ? "forward" : "backward",
+            granularity: vertical ? "line" : e.altKey ? "word" : "character",
+          },
+        });
+        return;
+      }
+    }
 
     // ⌘⇧↑ / ⌘⇧↓ (Ctrl+Shift on Windows) move the paragraph.
     if (mod && e.shiftKey && !e.altKey && (e.key === "ArrowUp" || e.key === "ArrowDown")) {
@@ -515,7 +868,8 @@ export function EssayEditor({
     if (e.target !== e.currentTarget) return;
     e.preventDefault();
     const last = blocks[blocks.length - 1];
-    focusAt({ blockId: last.id, offset: last.text.length });
+    if (spanning) land({ blockId: last.id, start: last.text.length, end: last.text.length, backward: false });
+    else focusAt({ blockId: last.id, offset: last.text.length });
   }
 
   const showPlaceholder = blocks.length === 1 && blocks[0].text === "";
@@ -527,8 +881,22 @@ export function EssayEditor({
       ref={rootRef}
       role="group"
       lang={lang}
+      // Focusable only while it holds a selection across paragraphs.
+      tabIndex={spanning ? -1 : undefined}
       onMouseDown={onRootMouseDown}
-      className={cn("flex cursor-text flex-col gap-y-[1lh] font-serif text-essay text-text", className)}
+      // A click or a drag inside the <p>s is the browser's own selection;
+      // once it ends inside one paragraph, that paragraph takes over.
+      onMouseUp={() => {
+        if (spanningNow.current && !dragSelecting.current) settleSpan();
+      }}
+      onKeyDown={onSpanKeyDown}
+      onCopy={(e) => onSpanCopy(e, false)}
+      onCut={(e) => onSpanCopy(e, !readOnly)}
+      onPaste={onSpanPaste}
+      onBlur={(e) => {
+        if (spanning && e.target === e.currentTarget && !e.currentTarget.contains(e.relatedTarget)) setSpanning(false);
+      }}
+      className={cn("flex cursor-text flex-col gap-y-[1lh] font-serif text-essay text-text outline-none", className)}
       {...props}
     >
       {blocks.map((block, index) => (
@@ -541,6 +909,7 @@ export function EssayEditor({
               wrappers.current.delete(block.id);
             };
           }}
+          data-wrapper={block.id}
           data-dragging={drag?.id === block.id ? "" : undefined}
           style={dragStyle(block, index)}
           // Lifted while dragged: a raised card drawn outside the text, so
@@ -561,35 +930,55 @@ export function EssayEditor({
               returnFocus={() => textareas.current.get(block.id) ?? null}
             />
           )}
-          <textarea
-            ref={(el) => {
-              if (!el) return;
-              textareas.current.set(block.id, el);
-              return () => {
-                textareas.current.delete(block.id);
-              };
-            }}
-            value={block.text}
-            rows={1}
-            readOnly={readOnly}
-            tabIndex={block.id === tabStop ? 0 : -1}
-            onFocus={() => {
-              setFocusedId(block.id);
-              setTabStopId(block.id);
-            }}
-            onBlur={() => setFocusedId((id) => (id === block.id ? null : id))}
-            aria-label={`Paragraph ${index + 1} of ${blocks.length}`}
-            aria-keyshortcuts={canReorder ? "Meta+Shift+ArrowUp Meta+Shift+ArrowDown Control+Shift+ArrowUp Control+Shift+ArrowDown" : undefined}
-            placeholder={showPlaceholder ? placeholder : undefined}
-            enterKeyHint="enter"
-            {...NO_WRITING_HELP}
-            onChange={(e) => onChange(block, e)}
-            onKeyDown={(e) => onKeyDown(block, index, e)}
-            onPaste={(e) => onPaste(block, e)}
-            // The writing surface's focus indicator is the caret; an outline
-            // around each paragraph would frame the essay like a form.
-            className="field-sizing-content block w-full resize-none overflow-hidden bg-transparent p-0 text-inherit outline-none placeholder:text-text-3"
-          />
+          {spanning ? (
+            // Same box and text metrics as the textarea, so nothing moves.
+            <p
+              ref={(el) => {
+                if (!el) return;
+                paragraphs.current.set(block.id, el);
+                return () => {
+                  paragraphs.current.delete(block.id);
+                };
+              }}
+              data-block={block.id}
+              className="block w-full p-0 break-words whitespace-pre-wrap"
+            >
+              {block.text || <br />}
+            </p>
+          ) : (
+            <textarea
+              ref={(el) => {
+                if (!el) return;
+                textareas.current.set(block.id, el);
+                return () => {
+                  textareas.current.delete(block.id);
+                };
+              }}
+              value={block.text}
+              rows={1}
+              readOnly={readOnly}
+              tabIndex={block.id === tabStop ? 0 : -1}
+              onFocus={() => {
+                setFocusedId(block.id);
+                setTabStopId(block.id);
+              }}
+              onBlur={() => setFocusedId((id) => (id === block.id ? null : id))}
+              aria-label={`Paragraph ${index + 1} of ${blocks.length}`}
+              aria-keyshortcuts={canReorder ? "Meta+Shift+ArrowUp Meta+Shift+ArrowDown Control+Shift+ArrowUp Control+Shift+ArrowDown" : undefined}
+              placeholder={showPlaceholder ? placeholder : undefined}
+              enterKeyHint="enter"
+              {...NO_WRITING_HELP}
+              spellCheck={spellCheck}
+              onChange={(e) => onChange(block, e)}
+              onKeyDown={(e) => onKeyDown(block, index, e)}
+              onPaste={(e) => onPaste(block, e)}
+              onMouseDown={(e) => onTextMouseDown(block, e)}
+              onPointerDown={(e) => onTextPointerDown(block, e)}
+              // The writing surface's focus indicator is the caret; an outline
+              // around each paragraph would frame the essay like a form.
+              className="field-sizing-content block w-full resize-none overflow-hidden bg-transparent p-0 text-inherit outline-none placeholder:text-text-3"
+            />
+          )}
         </div>
       ))}
       <p className="sr-only" aria-live="polite">
@@ -720,4 +1109,14 @@ function fitHeight(el: HTMLTextAreaElement) {
   el.style.height = "0px";
   el.style.height = `${el.scrollHeight}px`;
   if (window.scrollY !== scrollY) window.scrollTo({ top: scrollY });
+}
+
+/** The text position under a point: the standard API, or WebKit's older one. */
+function pointAt(x: number, y: number): { node: Node; offset: number } | null {
+  if (typeof document.caretPositionFromPoint === "function") {
+    const p = document.caretPositionFromPoint(x, y);
+    return p ? { node: p.offsetNode, offset: p.offset } : null;
+  }
+  const r = document.caretRangeFromPoint?.(x, y);
+  return r ? { node: r.startContainer, offset: r.startOffset } : null;
 }

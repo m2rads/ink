@@ -77,16 +77,50 @@ export function insertText(blocks: Block[], id: string, start: number, end: numb
 }
 
 /**
- * Enter: delete the selection, then split the block at the caret. Returns
- * null in an empty block, so repeated Enter never stacks empty paragraphs.
+ * Enter: delete the selection, then split the block at the caret. In an
+ * empty block it adds another empty one below: writers can leave blank
+ * paragraphs.
  */
-export function splitBlock(blocks: Block[], id: string, start: number, end: number): Edit | null {
+export function splitBlock(blocks: Block[], id: string, start: number, end: number): Edit {
   const index = indexOf(blocks, id);
   const block = blocks[index];
-  if (block.text === "") return null;
   const head = { ...block, text: block.text.slice(0, start) };
   const tail = createBlock(block.text.slice(end));
   return { blocks: replaceAt(blocks, index, [head, tail]), caret: { blockId: tail.id, offset: 0 } };
+}
+
+/**
+ * Replace the text from `start` to `end` (start first; they may be in
+ * different blocks) with `text`. The blocks between them go, and the two ends
+ * join into the first one: a selection across paragraphs that's typed over,
+ * deleted or pasted onto.
+ */
+export function replaceRange(blocks: Block[], start: Caret, end: Caret, text: string): Edit {
+  const i = indexOf(blocks, start.blockId);
+  const j = indexOf(blocks, end.blockId);
+  if (i === j) return insertText(blocks, start.blockId, start.offset, end.offset, text);
+  const first = blocks[i];
+  const joined = { ...first, text: first.text.slice(0, start.offset) + blocks[j].text.slice(end.offset) };
+  return insertText([...blocks.slice(0, i), joined, ...blocks.slice(j + 1)], first.id, start.offset, start.offset, text);
+}
+
+/** The text from `start` to `end` (start first), paragraphs separated by a blank line: what a copy puts on the clipboard. */
+export function textBetween(blocks: Block[], start: Caret, end: Caret): string {
+  const i = indexOf(blocks, start.blockId);
+  const j = indexOf(blocks, end.blockId);
+  if (i === j) return blocks[i].text.slice(start.offset, end.offset);
+  return [
+    blocks[i].text.slice(start.offset),
+    ...blocks.slice(i + 1, j).map((b) => b.text),
+    blocks[j].text.slice(0, end.offset),
+  ].join("\n\n");
+}
+
+/** Whether caret `a` comes before caret `b` in the essay. */
+export function isBefore(blocks: Block[], a: Caret, b: Caret): boolean {
+  const i = indexOf(blocks, a.blockId);
+  const j = indexOf(blocks, b.blockId);
+  return i < j || (i === j && a.offset < b.offset);
 }
 
 /** Backspace at the start of a block: join it onto the end of the previous one. */

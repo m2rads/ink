@@ -5,10 +5,13 @@ import {
   blocksToText,
   countWords,
   insertText,
+  isBefore,
   mergeWithNext,
   mergeWithPrevious,
   moveBlock,
+  replaceRange,
   splitBlock,
+  textBetween,
   type Block,
 } from "./blocks";
 
@@ -32,8 +35,10 @@ describe("splitBlock", () => {
     expect(edit.blocks[0].id).toBe("b0");
   });
 
-  test("does nothing in an empty block", () => {
-    expect(splitBlock(doc("Un", ""), "b1", 0, 0)).toBeNull();
+  test("in an empty block, adds another empty block below", () => {
+    const edit = splitBlock(doc("Un", ""), "b1", 0, 0);
+    expect(texts(edit.blocks)).toEqual(["Un", "", ""]);
+    expect(edit.caret).toEqual({ blockId: edit.blocks[2].id, offset: 0 });
   });
 });
 
@@ -81,6 +86,44 @@ describe("insertText", () => {
     const edit = insertText(doc(""), "b0", 0, 0, "été");
     expect(edit.blocks[0].text).toBe("été");
     expect(edit.blocks[0].text.length).toBe(3);
+  });
+});
+
+describe("ranges across blocks", () => {
+  const at = (blockId: string, offset: number) => ({ blockId, offset });
+
+  test("typing over a selection across blocks joins its two ends", () => {
+    const edit = replaceRange(doc("Bonjour le", "milieu", "monde entier"), at("b0", 8), at("b2", 6), "X");
+    expect(texts(edit.blocks)).toEqual(["Bonjour Xentier"]);
+    expect(edit.caret).toEqual({ blockId: "b0", offset: 9 });
+  });
+
+  test("deleting it leaves the caret where it began", () => {
+    const edit = replaceRange(doc("ab", "cd"), at("b0", 1), at("b1", 1), "");
+    expect(texts(edit.blocks)).toEqual(["ad"]);
+    expect(edit.caret).toEqual({ blockId: "b0", offset: 1 });
+  });
+
+  test("pasting paragraphs over it makes new blocks", () => {
+    const edit = replaceRange(doc("ab", "cd", "ef"), at("b0", 1), at("b2", 1), "un\n\ndeux");
+    expect(texts(edit.blocks)).toEqual(["aun", "deuxf"]);
+  });
+
+  test("within one block, it's a plain replace", () => {
+    const edit = replaceRange(doc("abc"), at("b0", 1), at("b0", 2), "X");
+    expect(texts(edit.blocks)).toEqual(["aXc"]);
+  });
+
+  test("copies with a blank line between paragraphs, empty ones included", () => {
+    expect(textBetween(doc("Un deux", "", "trois quatre"), at("b0", 3), at("b2", 5))).toBe("deux\n\n\n\ntrois");
+    expect(textBetween(doc("abc"), at("b0", 1), at("b0", 3))).toBe("bc");
+  });
+
+  test("orders carets across and within blocks", () => {
+    const blocks = doc("ab", "cd");
+    expect(isBefore(blocks, at("b0", 2), at("b1", 0))).toBe(true);
+    expect(isBefore(blocks, at("b1", 0), at("b0", 2))).toBe(false);
+    expect(isBefore(blocks, at("b1", 0), at("b1", 0))).toBe(false);
   });
 });
 

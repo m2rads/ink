@@ -216,6 +216,8 @@ export function WritingScreen({ prompt, view = "write" }: { prompt: Prompt; view
                   value={blocks}
                   onValueChange={onValueChange}
                   readOnly={locked}
+                  // The exam has no spellcheck, so a mock run doesn't either.
+                  spellCheck={!mock}
                   aria-label="Your essay"
                   placeholder="Écrivez ici…"
                   autoFocus
