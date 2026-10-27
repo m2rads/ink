@@ -98,7 +98,12 @@ export function createLocalStore<T>({ prefix, parse, serialize, fallback, saveDe
     return [value, set];
   }
 
-  return { useValue, read, write, remove };
+  /** Save `id` now instead of after the delay. */
+  function flush(id: string) {
+    persist(id);
+  }
+
+  return { useValue, read, write, remove, flush };
 }
 
 function safeGet(key: string): string | null {

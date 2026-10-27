@@ -59,6 +59,11 @@ export function newEssayHref(id: string) {
  * Record an edit: new title or word count, and move the essay to the top.
  * Saves the essay first if it isn't saved yet.
  */
+/** Write the essay list to storage now, not after its delay. */
+export function flushEssays() {
+  store.flush(INDEX);
+}
+
 export function saveEssay(id: string, patch: Partial<Pick<EssayMeta, "title" | "words">>) {
   const essays = store.read(INDEX);
   const current = essays.find((e) => e.id === id);

@@ -23,6 +23,8 @@ export const useDraft = drafts.useValue;
 /** For edits made outside the editor, such as a fix accepted in a review. */
 export const readDraft = drafts.read;
 export const writeDraft = drafts.write;
+/** Save the draft now, not after its delay (⌘S). */
+export const flushDraft = drafts.flush;
 
 /** A draft and the caret saved with it. */
 export function removeDraft(id: string) {

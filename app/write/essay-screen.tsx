@@ -2,6 +2,7 @@
 
 import { CoffeeIcon } from "lucide-react";
 import Link from "next/link";
+import { toast } from "sonner";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import { AppBar, AppBarSkeleton } from "@/components/app-bar";
@@ -9,14 +10,14 @@ import { TruncateWords } from "@/components/truncate-words";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { essayTitle, hasWriting, isSaved, removeEssay, saveEssay, TITLE_MAX, useEssays } from "@/lib/essays";
+import { essayTitle, flushEssays, hasWriting, isSaved, removeEssay, saveEssay, TITLE_MAX, useEssays } from "@/lib/essays";
 import { cn } from "@/lib/utils";
 
 import { countWords, type Block, type Caret } from "./blocks";
 import { caretX, isOnLastLine, offsetAtX } from "./caret";
 import { Correction, useCorrectionText } from "./correction";
 import { Dictionary } from "./dictionary";
-import { readDraft, removeDraft, useCaret, useDraft } from "./draft-store";
+import { flushDraft, readDraft, removeDraft, useCaret, useDraft } from "./draft-store";
 import { EssayEditor, type EssayEditorHandle } from "./essay-editor";
 import { EssayTimer } from "./essay-timer";
 import { removeSampleRuns } from "./legacy-storage";
@@ -28,6 +29,9 @@ import { trackEdit } from "./review-store";
 // (essay-timer.tsx), coffee mode and Review; the word count sits at the
 // bottom left. There's one view: a review adds its marks and notes to the
 // essay, which stays editable, and fixes are typed into it.
+//
+// The essay saves itself as it's written. ⌘S / Ctrl+S saves it at once
+// (the browser's "Save page" never opens here) and says so in a toast.
 //
 // Coffee mode leaves only the writing and its word count: the app bar and
 // the review's marks and notes fade out, with nothing moving. Its own button
@@ -56,6 +60,22 @@ export function EssayScreen({
   if (essay && !editable) setEditable(true);
 
   useEffect(removeSampleRuns, []);
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || e.altKey || e.shiftKey || e.key.toLowerCase() !== "s") return;
+      e.preventDefault();
+      if (!isSaved(id)) {
+        toast("Nothing to save", { id: "save" });
+        return;
+      }
+      flushDraft(id);
+      flushEssays();
+      toast("Content saved", { id: "save" });
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [id]);
 
   // An unsaved essay leaves no draft behind: on leaving the page in the app
   // (unmount), and on reload or close, which skip unmounting.
