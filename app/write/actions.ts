@@ -4,6 +4,7 @@ import { z } from "zod";
 
 import { checkEssay, judgeFix, type EssayCheck, type FixVerdict } from "@/lib/ai/check";
 import { matchesAccepted } from "@/lib/ai/correction";
+import { lookUpGender, type Gender } from "@/lib/gender";
 import { LANGUAGE_CODES } from "@/lib/languages";
 import { translate } from "@/lib/translate";
 
@@ -66,11 +67,27 @@ const lookupSchema = z.object({
   direction: z.enum(["to-fr", "from-fr"]),
 });
 
-export type Lookup = { translation: string };
+/** `gender` is the French side's: what was typed from French, the translation into it. */
+export type Lookup = { translation: string; gender: Gender | null };
 
-/** The dictionary's lookup: one translation, from Google Translate. */
+/**
+ * The dictionary's lookup: one translation, from Google Translate, and the
+ * gender of the French side when it's a noun (lib/gender.ts, on this server:
+ * no extra request, and the data never reaches the browser).
+ */
 export async function lookUp(input: z.input<typeof lookupSchema>): Promise<Lookup> {
   const { text, lang, direction } = lookupSchema.parse(input);
   const [from, to] = direction === "to-fr" ? [lang, "fr"] : ["fr", lang];
-  return { translation: await translate({ text, from, to }) };
+  const translation = await translate({ text, from, to });
+  return { translation, gender: genderOf(direction === "to-fr" ? translation : text) };
+}
+
+/** A gender bug never costs the translation. */
+function genderOf(french: string): Gender | null {
+  try {
+    return lookUpGender(french);
+  } catch (error) {
+    console.error(JSON.stringify({ event: "dict.gender.error", error: String(error) }));
+    return null;
+  }
 }

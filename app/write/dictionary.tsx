@@ -28,6 +28,7 @@ import { Kbd, KbdGroup } from "@/components/ui/kbd";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import type { Gender, Genre } from "@/lib/gender";
 import { LANGUAGE_CODES, LANGUAGES, language, type LanguageCode } from "@/lib/languages";
 import { createLocalStore } from "@/lib/local-store";
 import { speakFrench, useCanSpeakFrench } from "@/lib/speech";
@@ -61,7 +62,10 @@ import { SELECTION_UI, selectionAnchor, useSelection, type Selected } from "./se
 // instead of opening the panel.
 //
 // Wherever a lookup shows French, a speaker button reads it aloud
-// (lib/speech.ts, the browser's own French voice).
+// (lib/speech.ts, the browser's own French voice). When the French side is a
+// noun, its gender comes with the translation and shows under it the way it's
+// written: "une maison", "un or une élève", a line per gender when the gender
+// changes the meaning.
 
 const WIDE = "(min-width: 1312px)";
 const DEBOUNCE_MS = 300;
@@ -97,6 +101,7 @@ function parse(raw: string | null): Settings | null {
 
 type DictionaryContext = {
   enabled: boolean;
+  quiet: boolean;
   /** null until the client knows the window's width. */
   wide: boolean | null;
   settings: Settings | null;
@@ -127,7 +132,16 @@ function subscribeWide(onChange: () => void) {
   return () => mq.removeEventListener("change", onChange);
 }
 
-function DictionaryRoot({ enabled = true, children }: { enabled?: boolean; children: React.ReactNode }) {
+function DictionaryRoot({
+  enabled = true,
+  quiet = false,
+  children,
+}: {
+  enabled?: boolean;
+  /** Coffee mode: the panel keeps its field and results but not the recent words. */
+  quiet?: boolean;
+  children: React.ReactNode;
+}) {
   const [settings, setSettings] = settingsStore.useValue("settings");
   const wide = useSyncExternalStore(
     subscribeWide,
@@ -201,6 +215,7 @@ function DictionaryRoot({ enabled = true, children }: { enabled?: boolean; child
     <Context
       value={{
         enabled,
+        quiet,
         wide,
         settings,
         update,
@@ -320,7 +335,7 @@ function DictionarySheet() {
 
 /** The language pair, the field and the result: the same in the margin and the sheet. */
 function Lookup({ className }: { className?: string }) {
-  const { settings, update, query, setQuery, inputRef, focusEssay } = useDictionary();
+  const { settings, update, query, setQuery, inputRef, focusEssay, quiet } = useDictionary();
   const id = useId();
   const settled = useDebounced(query, DEBOUNCE_MS);
   if (!settings) return null;
@@ -372,18 +387,20 @@ function Lookup({ className }: { className?: string }) {
           it never scrolls sideways. */}
       <div className="-mx-2 min-h-0 flex-1 overflow-y-auto overscroll-contain px-2">
         {!query.trim() ? (
-          <Start
-            recent={settings.recent}
-            onPick={(w) => {
-              setQuery(w);
-              inputRef.current?.focus();
-            }}
-            onRemove={(w, keyboard) => {
-              update({ recent: settings.recent.filter((r) => r !== w) });
-              // The button pressed is gone; from the keyboard, focus goes back to the field.
-              if (keyboard) inputRef.current?.focus();
-            }}
-          />
+          quiet ? null : (
+            <Start
+              recent={settings.recent}
+              onPick={(w) => {
+                setQuery(w);
+                inputRef.current?.focus();
+              }}
+              onRemove={(w, keyboard) => {
+                update({ recent: settings.recent.filter((r) => r !== w) });
+                // The button pressed is gone; from the keyboard, focus goes back to the field.
+                if (keyboard) inputRef.current?.focus();
+              }}
+            />
+          )
         ) : term ? (
           <Result
             key={`${settings.lang}:${settings.direction}:${term}`}
@@ -510,7 +527,7 @@ function Start({
   );
 }
 
-type Answer = { ok: true; translation: string } | { ok: false };
+type Answer = { ok: true; translation: string; gender: Gender | null } | { ok: false };
 
 /** Answers fetched this session, so going back to a word doesn't ask again. */
 const answers = new Map<string, Answer>();
@@ -528,8 +545,8 @@ function fetchAnswer(term: string, lang: LanguageCode, direction: Direction): Pr
   let request = pending.get(key);
   if (!request) {
     request = lookUp({ text: term, lang, direction })
-      .then(({ translation }): Answer => {
-        const answer: Answer = { ok: true, translation };
+      .then(({ translation, gender }): Answer => {
+        const answer: Answer = { ok: true, translation, gender };
         answers.set(key, answer);
         return answer;
       })
@@ -556,7 +573,7 @@ function Result({
 }) {
   const { answer, retry } = useAnswer(term, lang, direction);
 
-  const found = answer?.ok === true && !sameWord(answer.translation, term);
+  const found = answer?.ok === true && isFound(answer, term);
   // A word counts as looked up once the writer stops on its answer.
   useEffect(() => {
     if (!found) return;
@@ -588,13 +605,16 @@ function Result({
           No translation for “<span dir="auto">{term}</span>”. Check the spelling, or swap the languages.
         </p>
       ) : (
-        <div className="flex items-start justify-between gap-2">
-          <p lang={target} dir="auto" className={cn("text-title text-balance", target === "fr" && "font-serif")}>
-            {answer.translation}
-          </p>
-          {/* The French side: the answer when translating into French, else what was typed. */}
-          <Listen text={target === "fr" ? answer.translation : term} className="-mr-1.5 -my-0.5" />
-        </div>
+        <>
+          <div className="flex items-start justify-between gap-2">
+            <p lang={target} dir="auto" className={cn("text-title text-balance", target === "fr" && "font-serif")}>
+              {answer.translation}
+            </p>
+            {/* The French side: the answer when translating into French, else what was typed. */}
+            <Listen text={target === "fr" ? answer.translation : term} className="-mr-1.5 -my-0.5" />
+          </div>
+          {answer.gender && <NounGender gender={answer.gender} className="mt-1" />}
+        </>
       )}
     </div>
   );
@@ -724,14 +744,73 @@ function SelectionMeaning({ term, lang }: { term: string; lang: LanguageCode }) 
             Try again
           </button>
         </p>
-      ) : sameWord(answer.translation, term) ? (
+      ) : !isFound(answer, term) ? (
         <p className="text-ui text-text-3">No translation. Check the spelling</p>
       ) : (
-        <p lang={lang} dir="auto" className="font-medium text-balance">
-          {answer.translation}
-        </p>
+        <>
+          <p lang={lang} dir="auto" className="font-medium text-balance">
+            {answer.translation}
+          </p>
+          {answer.gender && <NounGender gender={answer.gender} className="mt-1" />}
+        </>
       )}
     </div>
+  );
+}
+
+const ARTICLE: Record<Genre, string> = { m: "un", f: "une" };
+const GENRE_NAME: Record<Genre, string> = { m: "masculine", f: "feminine" };
+
+/**
+ * A French noun's gender, the way it's written: the indefinite article, which
+ * shows it before a vowel too (un arbre, une affaire, where l' hides it), and
+ * the singular, so a plural shows which word the gender belongs to. When the
+ * gender changes the meaning, one line per gender, neither first on purpose.
+ * A noun only used in the plural has no article that shows its gender (les,
+ * des), so it's named: les vacances · feminine plural.
+ */
+function NounGender({ gender, className }: { gender: Gender; className?: string }) {
+  if (gender.kind === "senses") {
+    return (
+      <ul className={cn("grid gap-0.5 text-ui", className)}>
+        {gender.senses.map((sense) => (
+          <li key={`${sense.gender}:${sense.gloss}`} className="text-pretty">
+            <span lang="fr" className="font-serif text-text-2">
+              {ARTICLE[sense.gender]} {gender.lemma}
+            </span>
+            <span className="text-text-3">
+              <span aria-hidden> · </span>
+              {sense.gloss}
+            </span>
+          </li>
+        ))}
+      </ul>
+    );
+  }
+  if (gender.kind === "one" && gender.plural) {
+    return (
+      <p className={cn("text-ui", className)}>
+        <span lang="fr" className="font-serif text-text-2">
+          les {gender.lemma}
+        </span>
+        <span className="text-text-3">
+          <span aria-hidden> · </span>
+          {GENRE_NAME[gender.gender]} plural
+        </span>
+      </p>
+    );
+  }
+  return (
+    <p lang="fr" className={cn("font-serif text-ui text-text-2", className)}>
+      {gender.kind === "one" ? (
+        ARTICLE[gender.gender]
+      ) : (
+        <>
+          un <span lang="en">or</span> une
+        </>
+      )}{" "}
+      {gender.lemma}
+    </p>
   );
 }
 
@@ -759,7 +838,14 @@ function Listen({ text, className }: { text: string; className?: string }) {
   );
 }
 
-/** Google gives an unknown word back unchanged. */
+/**
+ * Google gives an unknown word back unchanged; a known noun spelled the same
+ * in both languages (table, restaurant) comes back unchanged too.
+ */
+function isFound(answer: { translation: string; gender: Gender | null }, term: string) {
+  return !!answer.gender || !sameWord(answer.translation, term);
+}
+
 function sameWord(a: string, b: string) {
   const fold = (s: string) => s.normalize("NFC").toLocaleLowerCase("fr").trim();
   return fold(a) === fold(b);

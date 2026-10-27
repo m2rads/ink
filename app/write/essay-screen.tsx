@@ -35,8 +35,8 @@ import { trackEdit } from "./review-store";
 //
 // Coffee mode leaves only the writing and its word count: the app bar and
 // the review's marks and notes fade out, with nothing moving. Its own button
-// stays where it was, to bring them back. The dictionary is left alone (the
-// writer can hide it), and the timer keeps running.
+// stays where it was, to bring them back. The dictionary stays (the writer
+// can hide it) but drops its recent words, and the timer keeps running.
 //
 // Nothing is saved until something is written (lib/essays.ts): a new essay
 // (`fresh`, from New essay) opens on an id the list doesn't have yet.
@@ -137,7 +137,7 @@ export function EssayScreen({
   const fade = cn("transition-[opacity,visibility] duration-200 ease-out", coffee && "invisible opacity-0");
 
   return (
-    <Dictionary>
+    <Dictionary quiet={coffee}>
       <AppBar
         className={cn(
           "transition-[background-color,border-color] duration-200 ease-out",
