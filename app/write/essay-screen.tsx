@@ -175,8 +175,9 @@ export function EssayScreen({
             </TooltipTrigger>
             <TooltipContent>Coffee mode</TooltipContent>
           </Tooltip>
+          {/* Outside the fade: coffee mode keeps the timer's line (EssayTimer's quiet). */}
+          <EssayTimer quiet={coffee} />
           <div className={cn("flex items-center gap-3", fade)}>
-            <EssayTimer />
             {progress && (
               <span className="flex h-4 items-center gap-3 text-label text-text-3">
                 <ReviewProgress {...progress} />

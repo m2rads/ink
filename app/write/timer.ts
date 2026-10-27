@@ -7,7 +7,7 @@
 // for days.
 
 export type Timer = {
-  /** Minutes to count down, in ms; null counts up. */
+  /** Time to count down, in ms; null counts up. */
   limitMs: number | null;
   startedAt: number;
   /** Set while paused. */

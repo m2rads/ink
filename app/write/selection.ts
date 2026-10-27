@@ -18,12 +18,16 @@ export type Selected = {
   el: HTMLTextAreaElement;
   start: number;
   end: number;
+  /** The words just before it, to read a verb form by its subject (wordsBefore). */
+  before: string;
   /** One box per line of what's highlighted, relative to the textarea. */
   rects: { x: number; y: number; width: number; height: number }[];
 };
 
 const MAX_WORDS = 8;
 const MAX_CHARS = 80;
+const BEFORE_WORDS = 6;
+const BEFORE_CHARS = 100;
 const SETTLE_MS = 350;
 const WORD = /[\p{L}\p{M}\p{N}'’-]/u;
 
@@ -43,6 +47,18 @@ export function lookupTerm(value: string, start: number, end: number): { term: s
   return { term, start, end };
 }
 
+/**
+ * The last few words of `value` before `start`, on the same line: enough to
+ * find a verb's subject ("que nous" allions, "je me suis" levé) and what
+ * comes before a noun (cet été), short enough for the lookup's input cap.
+ */
+export function wordsBefore(value: string, start: number) {
+  const line = value.slice(0, start).split("\n").pop()!;
+  let words = line.trim().split(/\s+/).filter(Boolean).slice(-BEFORE_WORDS);
+  while (words.join(" ").length > BEFORE_CHARS) words = words.slice(1);
+  return words.join(" ");
+}
+
 function read(): Selected | null {
   const el = document.activeElement;
   if (!(el instanceof HTMLTextAreaElement)) return null;
@@ -52,7 +68,7 @@ function read(): Selected | null {
   const found = lookupTerm(el.value, selectionStart, selectionEnd);
   if (!found) return null;
   // The box is what's highlighted, not the widened term.
-  return { ...found, el, rects: rangeRects(el, selectionStart, selectionEnd) };
+  return { ...found, el, before: wordsBefore(el.value, found.start), rects: rangeRects(el, selectionStart, selectionEnd) };
 }
 
 const keyOf = (s: Selected | null) => (s ? `${s.el.selectionStart}:${s.el.selectionEnd}:${s.term}` : "");

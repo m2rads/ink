@@ -1,0 +1,31 @@
+/* The wheel's rows fade and shrink away from the band as they scroll, on a
+   scroll-driven animation: the compositor runs it, React never hears of it.
+   A row's view timeline runs from entering the bottom edge (0%) to leaving
+   the top (100%), so 50% is the band. Rows one away sit at about 0.67
+   opacity, two away at 0.33. */
+@keyframes wheel-row {
+  from,
+  to {
+    opacity: 0;
+    scale: 0.8;
+  }
+  50% {
+    opacity: 1;
+    scale: 1;
+  }
+}
+
+@supports (animation-timeline: view()) {
+  .wheel-row {
+    transform-origin: right center; /* shrink toward the unit beside it */
+    animation: wheel-row linear both;
+    animation-timeline: view();
+  }
+}
+
+/* Without scroll-driven animations (Firefox today): a plain fade at the edges. */
+@supports not (animation-timeline: view()) {
+  .wheel-scroller {
+    mask-image: linear-gradient(to bottom, transparent, #000 40%, #000 60%, transparent);
+  }
+}

@@ -28,6 +28,7 @@ import { Kbd, KbdGroup } from "@/components/ui/kbd";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import type { VerbLookup } from "@/lib/conjugation/types";
 import type { Gender, Genre } from "@/lib/gender";
 import { LANGUAGE_CODES, LANGUAGES, language, type LanguageCode } from "@/lib/languages";
 import { createLocalStore } from "@/lib/local-store";
@@ -35,6 +36,7 @@ import { speakFrench, useCanSpeakFrench } from "@/lib/speech";
 import { cn } from "@/lib/utils";
 
 import { lookUp } from "./actions";
+import { SelectionVerb, VerbEntry } from "./conjugation";
 import { SELECTION_UI, selectionAnchor, useSelection, type Selected } from "./selection";
 
 // The dictionary, as decided in AGENTS.md (Dictionary): it lives in the
@@ -65,7 +67,9 @@ import { SELECTION_UI, selectionAnchor, useSelection, type Selected } from "./se
 // (lib/speech.ts, the browser's own French voice). When the French side is a
 // noun, its gender comes with the translation and shows under it the way it's
 // written: "une maison", "un or une élève", a line per gender when the gender
-// changes the meaning.
+// changes the meaning. When it's a verb, its conjugation comes too
+// (conjugation.tsx): in the panel a tense at a time, in the selection card
+// the selected form's tense, person and rows, read with the words before it.
 
 const WIDE = "(min-width: 1312px)";
 const DEBOUNCE_MS = 300;
@@ -162,7 +166,8 @@ function DictionaryRoot({
   const prefetchLang = settings?.lang;
   useEffect(() => {
     // lookUp takes up to 100 characters; a longer selection fails when asked, as before.
-    if (selected && prefetchLang && selected.term.length <= 100) void fetchAnswer(selected.term, prefetchLang, "from-fr");
+    if (selected && prefetchLang && selected.term.length <= 100)
+      void fetchAnswer(selected.term, prefetchLang, "from-fr", selected.before);
   }, [selected, prefetchLang]);
 
   // Where the writer was, so Escape and ⌘K can take them back.
@@ -382,10 +387,11 @@ function Lookup({ className }: { className?: string }) {
           data-lpignore="true"
         />
       </form>
-      {/* The recent rows' hover reaches 8px past the field on each side; this
-          padding (cancelled by the margin) keeps that inside the scroller, so
-          it never scrolls sideways. */}
-      <div className="-mx-2 min-h-0 flex-1 overflow-y-auto overscroll-contain px-2">
+      {/* The recent rows' hover and the marked conjugation rows reach past the
+          field; this padding (cancelled by the margin) keeps them inside the
+          scroller. Buttons' invisible touch areas reach further, so the x-axis
+          is clipped too: it never scrolls sideways. */}
+      <div className="-mx-2 min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain px-2">
         {!query.trim() ? (
           quiet ? null : (
             <Start
@@ -527,26 +533,30 @@ function Start({
   );
 }
 
-type Answer = { ok: true; translation: string; gender: Gender | null } | { ok: false };
+type Answer = { ok: true; translation: string; gender: Gender | null; verb: VerbLookup | null } | { ok: false };
 
 /** Answers fetched this session, so going back to a word doesn't ask again. */
 const answers = new Map<string, Answer>();
 /** Lookups on their way, so a prefetch and the card that shows it share one request. */
 const pending = new Map<string, Promise<Answer>>();
 
-const answerKey = (term: string, lang: LanguageCode, direction: Direction) =>
-  `${lang}:${direction}:${term.toLocaleLowerCase("fr")}`;
+/** A selection's answer depends on the words before it too (nous allions, que nous allions). */
+const answerKey = (term: string, lang: LanguageCode, direction: Direction, before?: string) =>
+  `${lang}:${direction}:${term.toLocaleLowerCase("fr")}${before === undefined ? "" : `|${before.toLocaleLowerCase("fr")}`}`;
 
-/** The answer for `term`: kept, on its way, or asked for now. Failures aren't kept, so asking again retries. */
-function fetchAnswer(term: string, lang: LanguageCode, direction: Direction): Promise<Answer> {
-  const key = answerKey(term, lang, direction);
+/**
+ * The answer for `term`: kept, on its way, or asked for now. Failures aren't
+ * kept, so asking again retries. `before` is a selection's words before it.
+ */
+function fetchAnswer(term: string, lang: LanguageCode, direction: Direction, before?: string): Promise<Answer> {
+  const key = answerKey(term, lang, direction, before);
   const kept = answers.get(key);
   if (kept) return Promise.resolve(kept);
   let request = pending.get(key);
   if (!request) {
-    request = lookUp({ text: term, lang, direction })
-      .then(({ translation, gender }): Answer => {
-        const answer: Answer = { ok: true, translation, gender };
+    request = lookUp({ text: term, lang, direction, before })
+      .then(({ translation, gender, verb }): Answer => {
+        const answer: Answer = { ok: true, translation, gender, verb };
         answers.set(key, answer);
         return answer;
       })
@@ -614,6 +624,7 @@ function Result({
             <Listen text={target === "fr" ? answer.translation : term} className="-mr-1.5 -my-0.5" />
           </div>
           {answer.gender && <NounGender gender={answer.gender} className="mt-1" />}
+          {answer.verb && <VerbEntry lookup={answer.verb} className="mt-3" />}
         </>
       )}
     </div>
@@ -621,21 +632,21 @@ function Result({
 }
 
 /** The answer for `term`, from this session's answers or a lookup. Key the caller by term. */
-function useAnswer(term: string, lang: LanguageCode, direction: Direction) {
-  const key = answerKey(term, lang, direction);
+function useAnswer(term: string, lang: LanguageCode, direction: Direction, before?: string) {
+  const key = answerKey(term, lang, direction, before);
   const [answer, setAnswer] = useState<Answer | undefined>(() => answers.get(key));
   const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     if (answers.has(key)) return;
     let current = true;
-    fetchAnswer(term, lang, direction).then((next) => {
+    fetchAnswer(term, lang, direction, before).then((next) => {
       if (current) setAnswer(next);
     });
     return () => {
       current = false;
     };
-  }, [key, term, lang, direction, attempt]);
+  }, [key, term, lang, direction, before, attempt]);
 
   return {
     answer,
@@ -696,20 +707,17 @@ function SelectionLookup({
             onPointerDown={(e) => e.preventDefault()}
             className={cn(
               "origin-(--transform-origin) bg-raised text-text shadow-overlay outline-hidden transition-[opacity,scale] duration-150 ease-out data-starting-style:scale-95 data-starting-style:opacity-0 data-ending-style:scale-95 data-ending-style:opacity-0 data-ending-style:duration-100 data-ending-style:ease-in",
-              held?.asked ? "grid w-max max-w-72 gap-1 rounded-card px-3 py-2.5" : "rounded-full p-0.5",
+              held?.asked ? "w-max max-w-(--available-width) rounded-card px-3 py-2.5" : "rounded-full p-0.5",
             )}
           >
             {held &&
               (held.asked ? (
-                <>
-                  <div className="flex items-center justify-between gap-3">
-                    <p lang="fr" className="font-serif text-label text-text-3 italic">
-                      {held.selected.term}
-                    </p>
-                    <Listen text={held.selected.term} className="-my-1.5 -mr-1.5" />
-                  </div>
-                  <SelectionMeaning key={`${settings.lang}:${held.selected.term}`} term={held.selected.term} lang={settings.lang} />
-                </>
+                <SelectionCard
+                  key={`${settings.lang}:${held.selected.term}|${held.selected.before}`}
+                  term={held.selected.term}
+                  before={held.selected.before}
+                  lang={settings.lang}
+                />
               ) : (
                 <Button variant="ghost" size="xs" onClick={() => onAsk(held.selected)}>
                   <LanguagesIcon data-icon="inline-start" />
@@ -726,9 +734,40 @@ function SelectionLookup({
   );
 }
 
-/** The selection's meaning in the writer's language; a placeholder line holds its place while it loads. */
-function SelectionMeaning({ term, lang }: { term: string; lang: LanguageCode }) {
-  const { answer, retry } = useAnswer(term, lang, "from-fr");
+/**
+ * The selection, then its meaning in the writer's language (a placeholder
+ * line holds its place while it loads), and what it is: a noun's gender or a
+ * verb's form. A verb's rows fix the card's width, so switching between its
+ * readings never resizes it.
+ */
+function SelectionCard({ term, before, lang }: { term: string; before: string; lang: LanguageCode }) {
+  const { answer, retry } = useAnswer(term, lang, "from-fr", before);
+  const verb = answer?.ok ? answer.verb : null;
+  return (
+    <div className={cn("grid max-w-full gap-1", verb ? "w-74" : "max-w-72")}>
+      <div className="flex items-center justify-between gap-3">
+        <p lang="fr" className="font-serif text-label text-text-3 italic">
+          {term}
+        </p>
+        <Listen text={term} className="-my-1.5 -mr-1.5" />
+      </div>
+      <SelectionMeaning term={term} lang={lang} answer={answer} retry={retry} />
+      {verb && <SelectionVerb lookup={verb} className="mt-1.5" />}
+    </div>
+  );
+}
+
+function SelectionMeaning({
+  term,
+  lang,
+  answer,
+  retry,
+}: {
+  term: string;
+  lang: LanguageCode;
+  answer: Answer | undefined;
+  retry: () => void;
+}) {
   return (
     <div aria-live="polite" className="min-h-[1lh] text-body">
       {!answer ? (
@@ -842,8 +881,8 @@ function Listen({ text, className }: { text: string; className?: string }) {
  * Google gives an unknown word back unchanged; a known noun spelled the same
  * in both languages (table, restaurant) comes back unchanged too.
  */
-function isFound(answer: { translation: string; gender: Gender | null }, term: string) {
-  return !!answer.gender || !sameWord(answer.translation, term);
+function isFound(answer: { translation: string; gender: Gender | null; verb: VerbLookup | null }, term: string) {
+  return !!answer.gender || !!answer.verb || !sameWord(answer.translation, term);
 }
 
 function sameWord(a: string, b: string) {

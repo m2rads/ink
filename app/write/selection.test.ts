@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { lookupTerm } from "./selection";
+import { lookupTerm, wordsBefore } from "./selection";
 
 const text = "Le télétravail permet d’économiser le temps du trajet.";
 const at = (part: string) => [text.indexOf(part), text.indexOf(part) + part.length] as const;
@@ -44,3 +44,29 @@ function span(part: string) {
   const [start, end] = at(part);
   return { start, end };
 }
+
+describe("wordsBefore", () => {
+  test("the last few words before the selection", () => {
+    const value = "Il faut que nous allions";
+    expect(wordsBefore(value, value.indexOf("allions"))).toBe("Il faut que nous");
+  });
+
+  test("at most six words", () => {
+    const value = "Quand j’étais enfant, chaque été, nous y allions";
+    expect(wordsBefore(value, value.indexOf("allions"))).toBe("j’étais enfant, chaque été, nous y");
+  });
+
+  test("only the selection's own line", () => {
+    const value = "Cher Monsieur,\nje suis";
+    expect(wordsBefore(value, value.indexOf("suis"))).toBe("je");
+  });
+
+  test("nothing at the start", () => {
+    expect(wordsBefore("Allons-y", 0)).toBe("");
+  });
+
+  test("never more than 100 characters", () => {
+    const long = "anticonstitutionnellement ".repeat(6);
+    expect(wordsBefore(long, long.length).length).toBeLessThanOrEqual(100);
+  });
+});
