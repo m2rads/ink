@@ -5,7 +5,6 @@ import { createContext, use, useEffect, useLayoutEffect, useRef, useState } from
 
 import { TruncateWords } from "@/components/truncate-words";
 import { Button } from "@/components/ui/button";
-import { Kbd } from "@/components/ui/kbd";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { CATEGORIES, CATEGORY_LABEL, matchesAccepted, type Category } from "@/lib/ai/correction";
@@ -14,45 +13,50 @@ import { cn } from "@/lib/utils";
 import type { MarkStatus } from "./review-store";
 
 // Margin, the correction view decided in AGENTS.md (docs/prototypes/
-// correction-loop.html?v=3): every mistake numbered in the text, a note per
-// mistake in a column beside its paragraph, chips to filter by category.
-// Clicking a mark or note turns the phrase into an inline input; Enter checks
-// the rewrite. Wrong → feedback and a hint. "Show answer" is there any time
-// and shows it in the note, never in the text: the writer types it in, or
-// puts it in with the note's icon button. Skip is always there.
+// correction-loop.html?v=3), on the essay itself: the essay stays editable,
+// every mistake is numbered in the text, a note per mistake sits in a column
+// beside its paragraph, and chips filter by category. The writer fixes a
+// mistake by rewriting the highlighted words where they are; putting the
+// caret in a highlight opens its note, and Enter (or the note's Check)
+// checks the rewrite. Wrong → feedback and a hint. "Show answer" is there any
+// time and shows it in the note, never in the text: the writer types it in,
+// or puts it in with the note's icon button. Skip is always there.
 //
-//   <Correction mistakes={…} onCheck={…} onFix={…} onChange={…}>
+//   <Correction mistakes={…} onCheck={…} onResolve={…} onChange={…} onFocusMark={…}>
 //     <Correction.Layout>
-//       {heading}
+//       {title}
 //       <Correction.Header>
 //         <Correction.Aside>{status}<Correction.Filters /></Correction.Aside>
 //       </Correction.Header>
-//       <Correction.Row>
-//         <Correction.Paragraph blockId={b.id} text={b.text} />
-//         <Correction.Notes blockId={b.id} />
-//       </Correction.Row>
+//       <EssayEditor
+//         renderUnderlay={(b) => <Correction.Marks blockId={b.id} text={b.text} />}
+//         renderAfter={(b) => <Correction.Notes blockId={b.id} />}
+//         {...useCorrectionText()}
+//       />
 //     </Correction.Layout>
 //   </Correction>
 //
-// The text never moves for a note: where there's room to the right of the
+// Marks are drawn under the editor's text (Marks, in its underlay), so they
+// never move a letter; their words are whatever is there now, since the
+// caller keeps each mark's range in step with the writer's edits. The text
+// never moves for a note either: where there's room to the right of the
 // essay, Layout places each paragraph's Notes there, beside their paragraph,
 // and a tall open note pushes only the notes below it. Interface copy stays
 // out of the essay's column: Header's Aside (status, summary, filters) heads
-// the notes column, level with the top of the layout (the screen's heading),
-// and the header row above the essay takes no room, so the text sits where it
-// did while writing. Something put in Header outside the Aside stays above the
-// essay, with the Aside level with its first line. Without room (phones,
-// narrow windows) notes fall back into the flow under each paragraph and the
-// Aside above the essay. Read-only text with inline inputs, never contenteditable. State that
-// outlives the view (status, attempts) belongs to the caller through
-// onFix/onChange; what's typed and the feedback on it live here.
+// the notes column, level with the top of the layout (the title), and the
+// header row above the essay takes no room. Without room (phones, narrow
+// windows) notes fall back into the flow under each paragraph and the Aside
+// above the essay. State that outlives the view (status, attempts) belongs to
+// the caller through onResolve/onChange; the feedback on each try lives here.
 
 export type CorrectionMistake = {
   id: string;
   blockId: string;
-  /** Where the mark is in its block's current text: `wrong`, or `final` once resolved. */
+  /** Where the mark is in its block's current text. */
   start: number;
   end: number;
+  /** The words in the mark now: the original, the writer's rewrite, or what resolved it. */
+  current: string;
   /** In reading order, from 1. */
   number: number;
   category: Category;
@@ -78,36 +82,35 @@ type MistakePatch = Partial<Pick<CorrectionMistake, "status" | "attempts" | "hin
 
 // Category color classes, written out so Tailwind sees them. Tints only, at
 // the strengths color.md allows: quiet at rest (/8, underline at 60%), so the
-// mark being fixed or focused stands out at full strength (/24) with no ring
-// or padding of its own.
-const TONE: Record<Category, { text: string; dot: string; mark: string; skipped: string; field: string }> = {
+// mark whose note is open stands out at full strength (/24).
+const TONE: Record<Category, { text: string; dot: string; mark: string; skipped: string; active: string }> = {
   preposition: {
     text: "text-c-prep",
     dot: "bg-c-prep",
-    mark: "bg-c-prep/8 decoration-c-prep/60 hover:bg-c-prep/14 hover:decoration-c-prep focus-visible:bg-c-prep/24 focus-visible:decoration-c-prep",
-    skipped: "decoration-c-prep/60 hover:bg-c-prep/8 hover:decoration-c-prep focus-visible:bg-c-prep/24 focus-visible:decoration-c-prep",
-    field: "bg-c-prep/24 decoration-c-prep",
+    mark: "bg-c-prep/8 decoration-c-prep/60",
+    skipped: "decoration-c-prep/60",
+    active: "bg-c-prep/24 decoration-c-prep",
   },
   agreement: {
     text: "text-c-accord",
     dot: "bg-c-accord",
-    mark: "bg-c-accord/8 decoration-c-accord/60 hover:bg-c-accord/14 hover:decoration-c-accord focus-visible:bg-c-accord/24 focus-visible:decoration-c-accord",
-    skipped: "decoration-c-accord/60 hover:bg-c-accord/8 hover:decoration-c-accord focus-visible:bg-c-accord/24 focus-visible:decoration-c-accord",
-    field: "bg-c-accord/24 decoration-c-accord",
+    mark: "bg-c-accord/8 decoration-c-accord/60",
+    skipped: "decoration-c-accord/60",
+    active: "bg-c-accord/24 decoration-c-accord",
   },
   conjugation: {
     text: "text-c-conj",
     dot: "bg-c-conj",
-    mark: "bg-c-conj/8 decoration-c-conj/60 hover:bg-c-conj/14 hover:decoration-c-conj focus-visible:bg-c-conj/24 focus-visible:decoration-c-conj",
-    skipped: "decoration-c-conj/60 hover:bg-c-conj/8 hover:decoration-c-conj focus-visible:bg-c-conj/24 focus-visible:decoration-c-conj",
-    field: "bg-c-conj/24 decoration-c-conj",
+    mark: "bg-c-conj/8 decoration-c-conj/60",
+    skipped: "decoration-c-conj/60",
+    active: "bg-c-conj/24 decoration-c-conj",
   },
   spelling: {
     text: "text-c-ortho",
     dot: "bg-c-ortho",
-    mark: "bg-c-ortho/8 decoration-c-ortho/60 hover:bg-c-ortho/14 hover:decoration-c-ortho focus-visible:bg-c-ortho/24 focus-visible:decoration-c-ortho",
-    skipped: "decoration-c-ortho/60 hover:bg-c-ortho/8 hover:decoration-c-ortho focus-visible:bg-c-ortho/24 focus-visible:decoration-c-ortho",
-    field: "bg-c-ortho/24 decoration-c-ortho",
+    mark: "bg-c-ortho/8 decoration-c-ortho/60",
+    skipped: "decoration-c-ortho/60",
+    active: "bg-c-ortho/24 decoration-c-ortho",
   },
 };
 
@@ -122,20 +125,17 @@ type ContextValue = {
   filter: Category[];
   setFilter: (next: Category[]) => void;
   shown: (m: CorrectionMistake) => boolean;
-  values: Record<string, string>;
-  setValue: (id: string, value: string) => void;
   feedback: Record<string, Feedback | undefined>;
   pendingId: string | null;
-  inputs: React.RefObject<Map<string, HTMLInputElement>>;
-  /** Whether this mark should take focus as it mounts: its fix was just closed. Clears the claim. */
-  claimFocus: (id: string) => boolean;
-  /** Toggle a mistake open or closed (a click on its mark or note). */
+  /** Toggle a mistake open or closed (a click on its note), sending the caret to it on opening. */
   select: (id: string) => void;
-  /** Open a mistake, never close it (keyboard focus on its mark). */
-  open: (id: string) => void;
-  /** Move keyboard focus to the next unresolved mistake after `from`, in reading order; false if there's none. */
+  /** The caret is at [start, end] in a paragraph: open the mistake it's in, close the open one it left. */
+  caretAt: (blockId: string, start: number, end: number) => void;
+  /** Close a mistake's note, leaving the caret in its words; it reopens once the caret leaves and comes back. */
+  dismiss: (id: string) => void;
+  /** Move the caret to the next unresolved mistake after `from`, in reading order; false if there's none. */
   focusNext: (from: string) => boolean;
-  close: (id: string) => void;
+  focusMark: (id: string) => void;
   check: (id: string) => void;
   /** Show the answer in the note, leaving the essay alone. */
   answer: (id: string) => void;
@@ -164,9 +164,14 @@ type CorrectionProps = Omit<React.ComponentProps<"div">, "onChange"> & {
   onFilterChange?: (filter: Category[]) => void;
   /** Judge a rewrite. Called only when it differs from the original. */
   onCheck: (id: string, attempt: string) => Promise<Verdict>;
-  /** Write a fixed or revealed phrase into the essay. */
-  onFix: (id: string, final: string, how: "fixed" | "revealed") => void;
+  /**
+   * The words in the mark resolve it. With `replacement` (Use answer), put
+   * that in the essay in place of the mark's words first.
+   */
+  onResolve: (id: string, how: "fixed" | "revealed", replacement?: string) => void;
   onChange: (id: string, patch: MistakePatch) => void;
+  /** Put the caret at the end of the mark's words in the essay. */
+  onFocusMark: (id: string) => void;
 };
 
 function CorrectionRoot({
@@ -178,14 +183,16 @@ function CorrectionRoot({
   defaultFilter = [],
   onFilterChange,
   onCheck,
-  onFix,
+  onResolve,
   onChange,
+  onFocusMark,
   children,
   ...props
 }: CorrectionProps) {
   const [activeState, setActiveState] = useState(defaultActiveId);
   const activeId = activeIdProp !== undefined ? activeIdProp : activeState;
   const setActive = (id: string | null) => {
+    if (id === activeId) return;
     if (activeIdProp === undefined) setActiveState(id);
     onActiveIdChange?.(id);
   };
@@ -200,23 +207,28 @@ function CorrectionRoot({
   };
   const shown = (m: CorrectionMistake) => filter.length === 0 || filter.includes(m.category);
 
-  const [values, setValues] = useState<Record<string, string>>({});
   const [feedback, setFeedback] = useState<Record<string, Feedback | undefined>>({});
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [announcement, setAnnouncement] = useState("");
-  const inputs = useRef(new Map<string, HTMLInputElement>());
-  const returnTo = useRef<string | null>(null);
+  // The mistake closed with Escape while the caret is still in its words.
+  const dismissed = useRef<string | null>(null);
+  // A check outlives its render: its verdict is compared with the words as they are when it lands.
+  const latest = useRef(mistakes);
+  useLayoutEffect(() => {
+    latest.current = mistakes;
+  });
 
   const byId = (id: string) => mistakes.find((m) => m.id === id);
-  const setValue = (id: string, value: string) => setValues((v) => ({ ...v, [id]: value }));
   const say = (id: string, next: Feedback | undefined) => setFeedback((f) => ({ ...f, [id]: next }));
 
-  // The next open mistake after `from` among those shown, wrapping around.
+  // On to the next open mistake after `from` among those shown, wrapping around.
   function advance(from: string) {
     const list = mistakes.filter(shown);
     const i = list.findIndex((m) => m.id === from);
     const order = [...list.slice(i + 1), ...list.slice(0, Math.max(i, 0))];
-    setActive(order.find((m) => m.status === "open" && m.id !== from)?.id ?? null);
+    const next = order.find((m) => m.status === "open" && m.id !== from);
+    setActive(next?.id ?? null);
+    if (next) onFocusMark(next.id);
   }
 
   function announceResolved(how: string) {
@@ -230,80 +242,78 @@ function CorrectionRoot({
     filter,
     setFilter,
     shown,
-    values,
-    setValue,
     feedback,
     pendingId,
-    inputs,
-    claimFocus(id) {
-      if (returnTo.current !== id) return false;
-      returnTo.current = null;
-      return true;
-    },
     select(id) {
-      if (activeId === id) return setActive(null);
-      ctx.open(id);
-    },
-    open(id) {
       const m = byId(id);
-      if (!m || resolved(m.status) || activeId === id) return;
-      if (m.status === "skipped") onChange(id, { status: "open" });
+      if (!m || resolved(m.status)) return;
+      if (activeId === id) return setActive(null);
+      dismissed.current = null;
       setActive(id);
+      onFocusMark(id);
+    },
+    caretAt(blockId, start, end) {
+      const m = mistakes.find(
+        (x) => x.blockId === blockId && shown(x) && !resolved(x.status) && x.start <= start && end <= x.end,
+      );
+      if (dismissed.current !== m?.id) dismissed.current = null;
+      if (m && dismissed.current !== m.id) setActive(m.id);
+      else if (!m) setActive(null);
+    },
+    dismiss(id) {
+      dismissed.current = id;
+      if (activeId === id) setActive(null);
     },
     focusNext(from) {
       const list = mistakes.filter(shown);
       const next = list.slice(list.findIndex((m) => m.id === from) + 1).find((m) => !resolved(m.status));
-      const mark = next && document.getElementById(markId(next.id));
-      if (!mark) return false;
-      mark.focus();
+      if (!next) return false;
+      onFocusMark(next.id);
       return true;
     },
-    close(id) {
-      // The mark replaces the input after this render and takes focus back
-      // as it mounts, wherever focus was inside the fix (input or note).
-      returnTo.current = id;
-      setActive(null);
-    },
+    focusMark: onFocusMark,
     async check(id) {
       const m = byId(id);
       if (!m || pendingId) return;
-      const attempt = values[id] ?? m.wrong;
+      const attempt = m.current;
       if (!attempt.trim() || matchesAccepted(attempt, [m.wrong])) {
         say(id, { kind: "unchanged" });
-        shake(inputs.current.get(id));
+        shake(document.getElementById(noteId(id)));
         return;
       }
       setPendingId(id);
       try {
         const verdict = await onCheck(id, attempt);
+        // Rewritten again while it was checked: the verdict is for words that are gone.
+        if (latest.current.find((x) => x.id === id)?.current !== attempt) return;
         if (verdict.correct) {
           say(id, undefined);
           announceResolved(m.answered ? "Shown" : "Fixed");
-          onFix(id, attempt.trim(), m.answered ? "revealed" : "fixed");
+          onResolve(id, m.answered ? "revealed" : "fixed");
           advance(id);
         } else {
           say(id, { kind: "wrong", text: verdict.feedback });
           onChange(id, { attempts: m.attempts + 1 });
-          shake(inputs.current.get(id));
-          inputs.current.get(id)?.focus({ preventScroll: true });
+          shake(document.getElementById(noteId(id)));
+          onFocusMark(id);
         }
       } catch {
         say(id, { kind: "failed" });
-        inputs.current.get(id)?.focus({ preventScroll: true });
+        onFocusMark(id);
       } finally {
         setPendingId(null);
       }
     },
     answer(id) {
       onChange(id, { answered: true });
-      inputs.current.get(id)?.focus({ preventScroll: true });
+      onFocusMark(id);
     },
     apply(id) {
       const m = byId(id);
       if (!m) return;
       say(id, undefined);
       announceResolved("Shown");
-      onFix(id, m.fix, "revealed");
+      onResolve(id, "revealed", m.fix);
       advance(id);
     },
     skip(id) {
@@ -313,7 +323,7 @@ function CorrectionRoot({
     },
     hint(id) {
       onChange(id, { hinted: true });
-      inputs.current.get(id)?.focus({ preventScroll: true });
+      onFocusMark(id);
     },
   };
 
@@ -329,7 +339,39 @@ function CorrectionRoot({
   );
 }
 
-function shake(el: HTMLElement | undefined) {
+/**
+ * What the essay's editor needs from the correction: its caret opens and
+ * closes notes (onTextSelect), and in the open mark Enter checks a rewrite,
+ * Escape closes the note and Tab goes to the note's buttons (onTextKeyDown).
+ */
+export function useCorrectionText() {
+  const { mistakes, activeId, caretAt, dismiss, check } = useCorrection();
+  return {
+    onTextSelect: caretAt,
+    onTextKeyDown(block: { id: string }, e: React.KeyboardEvent<HTMLTextAreaElement>) {
+      const m = mistakes.find((x) => x.id === activeId && x.blockId === block.id);
+      if (!m) return;
+      const plain = !e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey;
+      if (e.key === "Enter" && plain && !matchesAccepted(m.current, [m.wrong])) {
+        // An untouched mark lets Enter split the paragraph as usual.
+        e.preventDefault();
+        check(m.id);
+      } else if (e.key === "Escape") {
+        e.preventDefault();
+        dismiss(m.id);
+      } else if (e.key === "Tab" && !e.shiftKey) {
+        // Straight to this mistake's Check, Hint and Skip.
+        const first = document.getElementById(noteBodyId(m.id))?.querySelector("button");
+        if (first) {
+          e.preventDefault();
+          first.focus();
+        }
+      }
+    },
+  };
+}
+
+function shake(el: HTMLElement | null) {
   if (!el || matchMedia("(prefers-reduced-motion: reduce)").matches) return;
   el.animate(
     [
@@ -342,8 +384,8 @@ function shake(el: HTMLElement | undefined) {
   );
 }
 
-const markId = (id: string) => `mark-${id}`;
-const noteBodyId = (id: string) => `note-${id}`;
+const noteId = (id: string) => `note-${id}`;
+const noteBodyId = (id: string) => `note-body-${id}`;
 
 /** Chips that filter by category, each with what's left to resolve. Only categories in this review appear. */
 /** Small chips in the notes column; touch-sized above the essay, where phones and narrow windows see them. */
@@ -394,7 +436,7 @@ const IN_MARGIN =
   "group-data-[layout=margin]/margin:absolute group-data-[layout=margin]/margin:top-0 group-data-[layout=margin]/margin:left-0 group-data-[layout=margin]/margin:m-0 group-data-ready/margin:transition-transform group-data-ready/margin:duration-200 group-data-ready/margin:ease-in-out";
 
 /**
- * The review's column: holds the heading, the essay and its margin. Writes
+ * The essay's column: holds the title, the editor and its margin. Writes
  * positions straight to the DOM (left, width, translateY) on every render and
  * resize, so placing notes never re-renders anything.
  */
@@ -463,7 +505,7 @@ function Layout({ className, children, ...props }: React.ComponentProps<"div">) 
 function placeMargin(root: HTMLElement, glide = true): MarginLayout {
   const blocks = [...root.querySelectorAll<HTMLElement>("[data-margin-block]")];
   const box = root.getBoundingClientRect();
-  const first = root.querySelector<HTMLElement>("[data-slot=correction-paragraph]");
+  const first = root.querySelector<HTMLElement>("[data-slot=correction-marks]");
   const right = first ? first.getBoundingClientRect().right : box.right;
   const room = document.documentElement.clientWidth - right - GAP - EDGE;
 
@@ -475,27 +517,29 @@ function placeMargin(root: HTMLElement, glide = true): MarginLayout {
   }
 
   root.dataset.layout = "margin";
+  // Each is placed inside its positioned parent: a paragraph's notes inside
+  // the paragraph's block, so they move with it; the Aside inside the layout.
+  const parentBox = (b: HTMLElement) => (b.offsetParent ?? root).getBoundingClientRect();
   // Widths first, so the heights read below are the final ones.
   for (const b of blocks) {
-    b.style.left = `${right - box.left + GAP}px`;
+    b.style.left = `${right - parentBox(b).left + GAP}px`;
     b.style.width = `${Math.min(room, NOTES_MAX)}px`;
   }
+  // In window coordinates from here on.
   let bottom = -Infinity;
   for (const b of blocks) {
     // Notes line up with their paragraph, the header's Aside with its status.
-    const paragraph = b
-      .closest("[data-slot=correction-row]")
-      ?.querySelector<HTMLElement>("[data-slot=correction-paragraph]");
+    const paragraph = b.parentElement?.querySelector<HTMLElement>("[data-slot=correction-marks]");
     const status = b.closest("[data-slot=correction-header]")?.firstElementChild;
     const want = paragraph
-      ? paragraph.getBoundingClientRect().top - box.top
+      ? paragraph.getBoundingClientRect().top
       : status && status !== b
-        ? besideFirstLine(b, status) - box.top
-        : 0;
+        ? besideFirstLine(b, status)
+        : box.top;
     const height = b.offsetHeight;
     const y = height === 0 ? want : Math.max(want, bottom + STACK);
     if (!glide) b.style.transition = "none";
-    b.style.transform = `translateY(${y}px)`;
+    b.style.transform = `translateY(${y - parentBox(b).top}px)`;
     if (height > 0) bottom = y + height;
   }
   if (!glide) {
@@ -504,14 +548,15 @@ function placeMargin(root: HTMLElement, glide = true): MarginLayout {
     for (const b of blocks) b.style.transition = "";
   }
   // Notes can run past the last paragraph; keep them inside the page.
-  root.style.minHeight = bottom > 0 ? `${bottom}px` : "";
+  root.style.minHeight = bottom > box.top ? `${bottom - box.top}px` : "";
   return "margin";
 }
 
 /**
  * Where `aside` goes so its first row (a row of chips, a line of the trace)
  * is centered on the first line of `status` text, a 28px chip beside an 18px
- * line. Its offset inside the aside is relative, so a translate doesn't skew it.
+ * line, in window coordinates. Its offset inside the aside is relative, so a
+ * translate doesn't skew it.
  */
 function besideFirstLine(aside: HTMLElement, status: Element) {
   const range = document.createRange();
@@ -545,197 +590,63 @@ function Aside({ className, ...props }: React.ComponentProps<"div">) {
   return <div data-margin-block="aside" className={cn("empty:hidden", IN_MARGIN, className)} {...props} />;
 }
 
-/** One paragraph and its notes; the notes go to the margin, or under the paragraph without room. */
-function Row({ className, ...props }: React.ComponentProps<"div">) {
-  return (
-    <div
-      data-slot="correction-row"
-      className={cn("flex flex-col gap-3 group-data-[layout=margin]/margin:block", className)}
-      {...props}
-    />
-  );
-}
-
-/** A paragraph of the essay with its mistakes marked. */
-function Paragraph({
-  blockId,
-  text,
-  className,
-  ...props
-}: React.ComponentProps<"p"> & { blockId: string; text: string }) {
+/**
+ * A paragraph's marks, for the editor's underlay: the paragraph's text,
+ * transparent there, with each mistake's words tinted and underlined in its
+ * category color, and its number as a superscript that takes no width (raised
+ * just past the phrase's last letter). Padding is cancelled by an equal
+ * negative margin, so nothing here moves a letter of the text above it.
+ */
+function Marks({ blockId, text, className, ...props }: React.ComponentProps<"div"> & { blockId: string; text: string }) {
   const { mistakes, activeId, shown } = useCorrection();
   const here = mistakes.filter((m) => m.blockId === blockId);
 
   const parts: React.ReactNode[] = [];
   let at = 0;
   for (const m of here) {
+    if (m.start < at || m.end > text.length) continue;
     parts.push(text.slice(at, m.start));
     const phrase = text.slice(m.start, m.end);
-    if (resolved(m.status)) parts.push(<Done key={m.id} mistake={m} phrase={phrase} />);
-    else if (m.id === activeId) parts.push(<FixInput key={m.id} mistake={m} />);
-    else if (shown(m)) parts.push(<Mark key={m.id} mistake={m} />);
-    else parts.push(phrase);
+    if (resolved(m.status)) {
+      parts.push(
+        <span
+          key={m.id}
+          className={cn(
+            "underline decoration-1 underline-offset-4",
+            m.status === "fixed" ? "decoration-ok" : "decoration-text-3 decoration-dotted",
+          )}
+        >
+          {phrase}
+        </span>,
+      );
+    } else if (shown(m)) {
+      const tone = TONE[m.category];
+      parts.push(
+        <span
+          key={m.id}
+          data-state={m.id === activeId ? "active" : m.status}
+          className={cn(
+            "relative -mx-0.5 rounded-row px-0.5 underline decoration-[1.5px] underline-offset-4 decoration-skip-ink-none transition-colors duration-150 ease-out",
+            m.id === activeId ? tone.active : m.status === "skipped" ? cn("decoration-dashed", tone.skipped) : tone.mark,
+          )}
+        >
+          <span className={cn("absolute -right-0.5 bottom-4 font-sans text-sup font-medium tabular-nums", tone.text)}>
+            {m.number}
+          </span>
+          {phrase}
+        </span>,
+      );
+    } else {
+      parts.push(phrase);
+    }
     at = m.end;
   }
   parts.push(text.slice(at));
 
   return (
-    <p
-      data-slot="correction-paragraph"
-      lang="fr"
-      // An empty paragraph keeps its line, as it does in the editor.
-      className={cn("min-h-[1lh] max-w-prose min-w-0 font-serif text-essay text-text", className)}
-      {...props}
-    >
+    <div data-slot="correction-marks" className={className} {...props}>
       {parts}
-    </p>
-  );
-}
-
-function Mark({ mistake: m }: { mistake: CorrectionMistake }) {
-  const { select, open, claimFocus } = useCorrection();
-  const tone = TONE[m.category];
-  const ref = useRef<HTMLButtonElement>(null);
-  // Set while focus comes back here from a closed fix, so that focus doesn't
-  // reopen it.
-  const returning = useRef(false);
-
-  useLayoutEffect(() => {
-    if (!claimFocus(m.id)) return;
-    returning.current = true;
-    ref.current?.focus();
-    returning.current = false;
-  });
-
-  return (
-    <button
-      ref={ref}
-      type="button"
-      id={markId(m.id)}
-      onClick={() => select(m.id)}
-      // Tabbing onto a mistake opens it, the way a click does. Keyboard focus
-      // only (:focus-visible): a mouse press focuses too, and its click toggles.
-      onFocus={(e) => {
-        if (!returning.current && e.currentTarget.matches(":focus-visible")) open(m.id);
-      }}
-      aria-label={`${CATEGORY_LABEL[m.category]} mistake ${m.number}: ${m.wrong}${m.status === "skipped" ? ", skipped" : ""}`}
-      // Same metrics as plain text, so marking a phrase moves no words: the
-      // padding is cancelled by an equal negative margin, and the number is a
-      // superscript that takes no width: raised past the phrase's last letter.
-      className={cn(
-        // ::before stretches the hit area to the full line height; any taller
-        // and marks on neighboring lines would overlap. On phones the note
-        // under the paragraph is the 44px target for the same mistake.
-        "relative -mx-0.5 inline cursor-pointer rounded-row px-0.5 underline outline-none before:absolute before:inset-x-0 before:-inset-y-0.5 decoration-[1.5px] underline-offset-4 decoration-skip-ink-none transition-colors duration-150 ease-out",
-        m.status === "skipped" ? cn("decoration-dashed", tone.skipped) : tone.mark,
-      )}
-    >
-      <span
-        className={cn(
-          "pointer-events-none absolute -right-0.5 bottom-4 font-sans text-sup font-medium tabular-nums select-none",
-          tone.text,
-        )}
-        aria-hidden
-      >
-        {m.number}
-      </span>
-      {m.wrong}
-    </button>
-  );
-}
-
-function Done({ mistake: m, phrase }: { mistake: CorrectionMistake; phrase: string }) {
-  return (
-    <span
-      title={m.status === "fixed" ? `Was “${m.wrong}”` : `Shown. Was “${m.wrong}”`}
-      className={cn(
-        "underline decoration-1 underline-offset-4",
-        m.status === "fixed" ? "decoration-ok" : "decoration-text-3 decoration-dotted",
-      )}
-    >
-      {phrase}
-    </span>
-  );
-}
-
-// The phrase, rewritable where it stands. Grows with its text; browsers
-// without CSS field-sizing get a measured width.
-function FixInput({ mistake: m }: { mistake: CorrectionMistake }) {
-  const { values, setValue, check, close, pendingId, inputs } = useCorrection();
-  const ref = useRef<HTMLInputElement>(null);
-  const value = values[m.id] ?? m.wrong;
-
-  useLayoutEffect(() => {
-    const el = ref.current;
-    if (!el || CSS.supports("field-sizing", "content")) return;
-    const style = getComputedStyle(el);
-    const ctx = document.createElement("canvas").getContext("2d");
-    if (!ctx) return;
-    ctx.font = `${style.fontStyle} ${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
-    el.style.width = `${Math.ceil(Math.max(ctx.measureText(value).width, 8) + 4)}px`;
-  }, [value]);
-
-  // Focus on open, caret at the end, and bring it into view if it's off screen.
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    inputs.current.set(m.id, el);
-    el.focus({ preventScroll: true });
-    el.setSelectionRange(el.value.length, el.value.length);
-    const r = el.getBoundingClientRect();
-    if (r.top < 72 || r.bottom > innerHeight - 96) {
-      const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
-      el.scrollIntoView({ block: "center", behavior: reduce ? "auto" : "smooth" });
-    }
-    const map = inputs.current;
-    return () => void map.delete(m.id);
-    // Only when this mistake's input mounts.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [m.id]);
-
-  return (
-    <input
-      ref={ref}
-      value={value}
-      onChange={(e) => setValue(m.id, e.target.value)}
-      onKeyDown={(e) => {
-        if (e.key === "Enter") {
-          e.preventDefault();
-          check(m.id);
-        } else if (e.key === "Escape") {
-          e.preventDefault();
-          close(m.id);
-        } else if (e.key === "Tab" && !e.shiftKey) {
-          // Straight to this mistake's Check, Hint and Skip, not the
-          // paragraph's other marks.
-          const first = document.getElementById(noteBodyId(m.id))?.querySelector("button");
-          if (first) {
-            e.preventDefault();
-            first.focus();
-          }
-        }
-      }}
-      readOnly={pendingId === m.id}
-      aria-busy={pendingId === m.id}
-      aria-label={`Rewrite “${m.wrong}”`}
-      aria-describedby={noteBodyId(m.id)}
-      lang="fr"
-      spellCheck={false}
-      autoComplete="off"
-      autoCorrect="off"
-      autoCapitalize="off"
-      enterKeyHint="done"
-      data-gramm="false"
-      data-lt-active="false"
-      // The mark's exact box, so opening it moves no words: one line box
-      // (top-aligned, 1lh tall), the same 2px side padding cancelled by a
-      // negative margin, the same underline. Focus shows as the stronger
-      // tint and the caret, not a ring that would paint over the neighbors.
-      className={cn(
-        "field-sizing-content -mx-0.5 inline-block h-[1lh] min-w-2 rounded-row border-0 px-0.5 align-top text-text underline outline-none decoration-[1.5px] underline-offset-4 decoration-skip-ink-none",
-        TONE[m.category].field,
-      )}
-    />
+    </div>
   );
 }
 
@@ -746,7 +657,7 @@ function Notes({ blockId, className, ...props }: React.ComponentProps<"div"> & {
   return (
     <div
       data-margin-block="notes"
-      className={cn("grid grid-cols-1 gap-1.5 font-sans empty:hidden", IN_MARGIN, className)}
+      className={cn("mt-3 grid cursor-default grid-cols-1 gap-1.5 font-sans empty:hidden", IN_MARGIN, className)}
       {...props}
     >
       {here.map((m) => (
@@ -759,14 +670,15 @@ function Notes({ blockId, className, ...props }: React.ComponentProps<"div"> & {
 const STATUS_LABEL: Record<MarkStatus, string> = { open: "", fixed: "Fixed", revealed: "Shown", skipped: "Skipped" };
 
 function Note({ mistake: m }: { mistake: CorrectionMistake }) {
-  const { activeId, select, check, answer, skip, hint, pendingId, close, inputs, focusNext } = useCorrection();
-  const open = activeId === m.id && m.status === "open";
+  const { activeId, select, check, answer, skip, hint, pendingId, dismiss, focusMark, focusNext } = useCorrection();
+  const open = activeId === m.id && !resolved(m.status);
   const done = resolved(m.status);
   const tone = TONE[m.category];
   const pending = pendingId === m.id;
 
   return (
     <div
+      id={noteId(m.id)}
       data-state={m.status}
       className={cn(
         "rounded-card border transition-colors duration-150",
@@ -774,8 +686,8 @@ function Note({ mistake: m }: { mistake: CorrectionMistake }) {
         open && "border-border-strong",
       )}
     >
-      {/* Out of the Tab order: each mistake's Tab stop is its mark in the text,
-          which opens this same note. */}
+      {/* Out of the Tab order: the way in from the keyboard is the caret in
+          the mark's words, then Tab. */}
       <button
         type="button"
         tabIndex={-1}
@@ -820,16 +732,17 @@ function Note({ mistake: m }: { mistake: CorrectionMistake }) {
             onKeyDown={(e) => {
               const buttons = e.currentTarget.querySelectorAll("button");
               if (e.key === "Escape") {
+                // Back to the words, with the note closed.
                 e.preventDefault();
-                close(m.id);
+                focusMark(m.id);
+                dismiss(m.id);
               } else if (e.key === "Tab" && e.shiftKey && e.target === buttons[0]) {
-                // Back to the phrase being fixed.
+                // Back to the words being fixed.
                 e.preventDefault();
-                inputs.current.get(m.id)?.focus();
+                focusMark(m.id);
               } else if (e.key === "Tab" && !e.shiftKey && e.target === buttons[buttons.length - 1]) {
-                // On to the next mistake in reading order, which opens on
-                // focus. The page order would skip later marks in this
-                // paragraph, since its notes come after its text.
+                // On to the next mistake in reading order, whose note opens
+                // with the caret in its words.
                 if (focusNext(m.id)) e.preventDefault();
               }
             }}
@@ -875,10 +788,6 @@ function Note({ mistake: m }: { mistake: CorrectionMistake }) {
                 Skip
               </Button>
             </div>
-            {/* Touch keyboards have no Enter key to name; their Done key checks too. */}
-            <p className="mt-3 text-caption text-text-3 pointer-coarse:hidden">
-              <Kbd>Enter</Kbd> to check
-            </p>
           </div>
         </div>
       </div>
@@ -963,4 +872,4 @@ function Rich({ text }: { text: string }) {
   );
 }
 
-export const Correction = Object.assign(CorrectionRoot, { Layout, Header, Aside, Filters, Row, Paragraph, Notes });
+export const Correction = Object.assign(CorrectionRoot, { Layout, Header, Aside, Filters, Marks, Notes });

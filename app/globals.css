@@ -335,15 +335,17 @@
   }
 
   /* The page color goes on html, not only body: html's background paints the
-     whole window (the canvas), including below short pages and in the
-     overscroll bounce. */
+     whole window (the canvas), including below short pages. The page stops
+     at its edges: no overscroll bounce past the top or bottom. */
   html {
+    overscroll-behavior: none;
     background: var(--bg);
     font-synthesis: none;
     -webkit-text-size-adjust: 100%;
   }
 
   body {
+    overscroll-behavior: none;
     color: var(--text);
     font-family: var(--font-sans);
     font-size: var(--text-body);

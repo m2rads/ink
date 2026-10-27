@@ -2,7 +2,7 @@
 
 import type { BaseUIEvent } from "@base-ui/react/types";
 import { ArrowDownIcon, ArrowUpIcon, GripVerticalIcon } from "lucide-react";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useImperativeHandle, useLayoutEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -23,6 +23,7 @@ import {
   mergeWithNext,
   mergeWithPrevious,
   moveBlock,
+  pressEnter,
   replaceRange,
   splitBlock,
   textBetween,
@@ -31,11 +32,14 @@ import {
   type Edit,
 } from "./blocks";
 import { caretTop, caretX, isOnFirstLine, isOnLastLine, offsetAtX } from "./caret";
+import { diffText } from "./marks";
 
 // Block-based essay editor: one auto-growing <textarea> per paragraph. Plain
 // text only, so the browser handles typing, accents, IME and selection inside
 // a paragraph; this component handles everything that crosses paragraphs
 // (Enter, Backspace/Delete at the edges, arrows, paste, reordering) and undo.
+// Enter at the end of a line starts a new line in the paragraph; Enter again
+// on the empty line starts a new paragraph instead (pressEnter).
 //
 // A selection can't span textareas, so one that crosses paragraphs (⌘A,
 // Shift+arrows past an edge, Shift+click, dragging out of a paragraph) swaps
@@ -44,6 +48,10 @@ import { caretTop, caretX, isOnFirstLine, isOnLastLine, offsetAtX } from "./care
 // Typing, deleting or pasting replaces it (replaceRange) and the textareas
 // come back; a selection that shrinks back into one paragraph, or a click,
 // lands in that paragraph's textarea. Never contenteditable.
+//
+// A screen can draw under each paragraph's text (renderUnderlay: a review's
+// highlights, in a layer with the same metrics behind the transparent
+// textarea) and add to each paragraph's block (renderAfter: its notes).
 
 type Snapshot = { blocks: Block[]; caret: Caret };
 
@@ -109,10 +117,16 @@ const NO_WRITING_HELP = {
   "data-lt-active": "false",
 } as const;
 
+export type EssayEditorHandle = {
+  /** Put the caret, or a selection, in a paragraph, scrolling it into view if it's off screen. */
+  select: (blockId: string, start: number, end?: number) => void;
+};
+
 type EssayEditorProps = Omit<React.ComponentProps<"div">, "defaultValue" | "onChange"> & {
   value?: Block[];
   defaultValue?: Block[];
-  onValueChange?: (blocks: Block[]) => void;
+  /** `caret` is where the edit left the caret, when the editor knows (it does for its own edits). */
+  onValueChange?: (blocks: Block[], caret: Caret | null) => void;
   /** Shown in the first paragraph while the essay is empty. */
   placeholder?: string;
   /**
@@ -136,6 +150,17 @@ type EssayEditorProps = Omit<React.ComponentProps<"div">, "defaultValue" | "onCh
    * horizontal position for ↑, so the caret can land under it; null for ←.
    */
   onExitTop?: (x: number | null) => void;
+  /** Drawn behind a paragraph's text with the same metrics (highlights). Hidden from assistive tech; text in it is transparent. */
+  renderUnderlay?: (block: Block) => React.ReactNode;
+  /** Shown after a paragraph's text, inside its block, so it moves with the paragraph. */
+  renderAfter?: (block: Block) => React.ReactNode;
+  /** The caret or selection moved inside a paragraph. */
+  onTextSelect?: (blockId: string, start: number, end: number) => void;
+  /** The selected essay text as it changes, across paragraphs too (blank lines between them); "" when nothing is selected. */
+  onSelectedText?: (text: string) => void;
+  /** A key in a paragraph, before the editor's own handling; preventDefault() takes it. */
+  onTextKeyDown?: (block: Block, e: React.KeyboardEvent<HTMLTextAreaElement>) => void;
+  handle?: React.Ref<EssayEditorHandle>;
 };
 
 export function EssayEditor({
@@ -149,6 +174,12 @@ export function EssayEditor({
   readOnly = false,
   spellCheck = true,
   onExitTop,
+  renderUnderlay,
+  renderAfter,
+  onTextSelect,
+  onSelectedText,
+  onTextKeyDown,
+  handle,
   lang = "fr",
   className,
   ...props
@@ -186,12 +217,13 @@ export function EssayEditor({
   const landing = useRef<Landing | null>(null);
   const dragSelecting = useRef(false);
 
-  function commit(next: Block[], caret: Caret | null) {
+  /** `caret` is placed once the DOM has the edit; `landed` is where the caret is after it, if not that. */
+  function commit(next: Block[], caret: Caret | null, landed = caret) {
     // Any edit puts the textareas back to type in.
     setSpanning(false);
     pendingCaret.current = caret;
     if (value === undefined) setUncontrolled(next);
-    onValueChange?.(next);
+    onValueChange?.(next, landed);
   }
 
   function apply(edit: Edit | null, before: Caret) {
@@ -282,6 +314,21 @@ export function EssayEditor({
     el.focus({ preventScroll: true });
     el.setSelectionRange(to.start, to.end, to.backward ? "backward" : "forward");
   });
+
+  useImperativeHandle(handle, () => ({
+    select(blockId, start, end = start) {
+      if (spanningNow.current) return land({ blockId, start, end, backward: false });
+      const el = textareas.current.get(blockId);
+      if (!el) return;
+      el.focus({ preventScroll: true });
+      el.setSelectionRange(start, end);
+      const line = el.getBoundingClientRect().top + caretTop(el, end);
+      if (line < SCROLL_EDGE_TOP_PX || line > innerHeight - SCROLL_EDGE_BOTTOM_PX * 1.5) {
+        const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+        window.scrollTo({ top: scrollY + line - innerHeight / 2, behavior: reduce ? "auto" : "smooth" });
+      }
+    },
+  }));
 
   function beginSpan(setup: SpanSetup) {
     spanSetup.current = setup;
@@ -577,6 +624,32 @@ export function EssayEditor({
     return () => root.removeEventListener("beforeinput", onBeforeInput);
   }, []);
 
+  // Caret and selection moves, from keys, clicks, typing or the
+  // cross-paragraph selection. selectionchange rather than React's onSelect,
+  // which misses some clicks; capture catches it whether it's fired at the
+  // textarea or at the document.
+  const onSelectionChange = useRef(() => {});
+  useLayoutEffect(() => {
+    onSelectionChange.current = () => {
+      let selected = "";
+      if (spanningNow.current) {
+        const r = spanRange();
+        if (r) selected = textBetween(blocks, r.start, r.end);
+      }
+      for (const [blockId, el] of textareas.current) {
+        if (el !== document.activeElement) continue;
+        onTextSelect?.(blockId, el.selectionStart, el.selectionEnd);
+        selected = el.value.slice(el.selectionStart, el.selectionEnd);
+      }
+      onSelectedText?.(selected);
+    };
+  });
+  useEffect(() => {
+    const listener = () => onSelectionChange.current();
+    document.addEventListener("selectionchange", listener, true);
+    return () => document.removeEventListener("selectionchange", listener, true);
+  }, []);
+
   // Without CSS field-sizing, size each textarea to its content, and again
   // whenever the editor's width changes the wrapping.
   useLayoutEffect(() => {
@@ -618,9 +691,11 @@ export function EssayEditor({
     const caretBefore = { blockId: block.id, offset: Math.max(0, el.selectionStart - (next.length - block.text.length)) };
 
     // A line break that got past keydown (drag-and-drop, an autocorrect
-    // newline, a mobile keyboard) splits the paragraph like a paste.
-    if (next.includes("\n")) {
-      apply(insertText(blocks, block.id, 0, block.text.length, next), caretBefore);
+    // newline, a mobile keyboard) splits the paragraph like a paste. Line
+    // breaks already in the paragraph stay.
+    const change = diffText(block.text, next, el.selectionStart);
+    if (change.inserted.includes("\n")) {
+      apply(insertText(blocks, block.id, change.at, change.at + change.removed, change.inserted), caretBefore);
       return;
     }
 
@@ -630,12 +705,15 @@ export function EssayEditor({
     commit(
       blocks.map((b) => (b.id === block.id ? { ...b, text: next } : b)),
       null,
+      { blockId: block.id, offset: el.selectionStart },
     );
   }
 
   function onKeyDown(block: Block, index: number, e: React.KeyboardEvent<HTMLTextAreaElement>) {
     // Mid-composition keys (dead keys for é, IME) belong to the input method.
     if (e.nativeEvent.isComposing || e.keyCode === 229) return;
+    onTextKeyDown?.(block, e);
+    if (e.defaultPrevented) return;
 
     const el = e.currentTarget;
     const start = el.selectionStart;
@@ -706,7 +784,7 @@ export function EssayEditor({
         // Cmd/Ctrl+Enter and Alt+Enter are left for the screen (submit).
         if (mod || e.altKey) return;
         e.preventDefault();
-        apply(splitBlock(blocks, block.id, start, end), here);
+        apply(pressEnter(blocks, block.id, start, end), here);
         return;
 
       case "Backspace":
@@ -979,6 +1057,16 @@ export function EssayEditor({
               returnFocus={() => textareas.current.get(block.id) ?? null}
             />
           )}
+          {renderUnderlay && (
+            // Under the text: the textarea and the <p>s are positioned too and
+            // come later, so they paint over it.
+            <div
+              aria-hidden
+              className="pointer-events-none absolute inset-x-0 top-0 break-words whitespace-pre-wrap text-transparent select-none"
+            >
+              {renderUnderlay(block)}
+            </div>
+          )}
           {spanning ? (
             // Same box and text metrics as the textarea, so nothing moves.
             <p
@@ -990,9 +1078,11 @@ export function EssayEditor({
                 };
               }}
               data-block={block.id}
-              className="block w-full p-0 break-words whitespace-pre-wrap"
+              className="relative block w-full p-0 break-words whitespace-pre-wrap"
             >
               {block.text || <br />}
+              {/* A last empty line (text ending in a line break) only shows with something on it. */}
+              {block.text.endsWith("\n") && <br />}
             </p>
           ) : (
             <textarea
@@ -1025,9 +1115,10 @@ export function EssayEditor({
               onPointerDown={(e) => onTextPointerDown(block, e)}
               // The writing surface's focus indicator is the caret; an outline
               // around each paragraph would frame the essay like a form.
-              className="field-sizing-content block w-full resize-none overflow-hidden bg-transparent p-0 text-inherit outline-none placeholder:text-text-3"
+              className="field-sizing-content relative block w-full resize-none overflow-hidden bg-transparent p-0 text-inherit outline-none placeholder:text-text-3"
             />
           )}
+          {renderAfter?.(block)}
         </div>
       ))}
       <p className="sr-only" aria-live="polite">

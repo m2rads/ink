@@ -26,9 +26,8 @@ export default function WritePage({ searchParams }: PageProps<"/write">) {
 
 async function Run({ searchParams }: Pick<PageProps<"/write">, "searchParams">) {
   const params = await searchParams;
-  const view = params.view === "review" ? "review" : "write";
   if (typeof params.essay !== "string") redirect("/home");
-  return <EssayScreen id={params.essay} view={view} fresh={params.new === "1"} />;
+  return <EssayScreen id={params.essay} fresh={params.new === "1"} />;
 }
 
 function EssaySkeleton() {

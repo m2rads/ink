@@ -6,16 +6,19 @@ import { toast } from "sonner";
 
 import { Progress } from "@/components/ui/progress";
 import type { EssayCheck } from "@/lib/ai/check";
-import { locate, matchesAccepted, sentenceAround } from "@/lib/ai/correction";
+import { matchesAccepted, sentenceAround } from "@/lib/ai/correction";
 import { cn } from "@/lib/utils";
 
 import { checkFix, reviewEssay } from "./actions";
 import type { Block } from "./blocks";
 import { Correction, type CorrectionMistake } from "./correction";
+import { readDraft } from "./draft-store";
+import type { EssayEditorHandle } from "./essay-editor";
 import {
-  applyFix,
   isStale,
   newReview,
+  readReview,
+  resolveMistake,
   saveReview,
   updateMistake,
   useEarlierCounts,
@@ -23,51 +26,38 @@ import {
   type Review,
 } from "./review-store";
 
-// On-demand AI review, for the essay screen. Review can
-// be pressed any time: Ink can't know when writing is done. Pressing it
-// again on unchanged text reopens the last review instead of paying for a
-// new one; on changed text, a new review replaces the old.
+// On-demand AI review, on the essay itself: the essay stays editable, and a
+// review only adds its marks and notes to it. Review can be pressed any time:
+// Ink can't know when writing is done. Pressing it on text unchanged since
+// the last review (fixes made in it don't count) does nothing new; on changed
+// text, a new review replaces the old. Writing goes on while it runs: its
+// marks land wherever their words are by then.
 //
-// A failed review never takes the essay's place on screen: it's a toast with
-// Retry, and the screen goes back to the writing view (onFailed).
+// A failed review is a toast with Retry; the last review, if any, stays.
 
 export type ReviewFlow = {
   review: Review | null | undefined;
   status: "idle" | "checking";
   /** While checking: how many mistakes the model has written out so far. */
   found: number;
-  /** Review the essay, or reopen the last review if the text hasn't changed. */
-  open: () => void;
+  /** Review the essay, unless it hasn't changed since the last review. */
+  run: () => void;
 };
 
-type FlowOptions = {
-  /** Leave the review view: there's nothing to show. */
-  onFailed: () => void;
-  /** The toast's Retry: reopen the review view and run it again. */
-  onRetry: () => void;
-};
-
-export function useReviewFlow(
-  draftId: string,
-  blocks: Block[] | null,
-  prompt: string,
-  { onFailed, onRetry }: FlowOptions,
-): ReviewFlow {
+export function useReviewFlow(draftId: string, prompt: string): ReviewFlow {
   const review = useReview(draftId);
   const [status, setStatus] = useState<ReviewFlow["status"]>("idle");
   const [found, setFound] = useState(0);
 
   // The toast outlives this render; Retry must review the text as it is
   // when pressed, not as it was when the review failed.
-  const latest = useRef({ onFailed, onRetry });
-  useEffect(() => {
-    latest.current = { onFailed, onRetry };
-  });
+  const retry = useRef(() => {});
 
-  async function run() {
-    if (!blocks) return;
+  async function check() {
+    const blocks = readDraft(draftId);
     setStatus("checking");
     setFound(0);
+    toast.dismiss(`review-failed:${draftId}`);
     const id = crypto.randomUUID();
     try {
       const events = await reviewEssay({ reviewId: id, prompt, paragraphs: blocks.map((b) => b.text) });
@@ -78,67 +68,55 @@ export function useReviewFlow(
         else result = read.value.check;
       }
       if (!result) throw new Error("Review ended without a result");
-      saveReview(draftId, newReview(blocks, result, id));
-      setStatus("idle");
+      saveReview(draftId, newReview(blocks, result, id, readDraft(draftId)));
     } catch (error) {
       console.error(error);
-      setStatus("idle");
-      latest.current.onFailed();
       toast.error("Review failed", {
         id: `review-failed:${draftId}`,
         description: "Your essay is unchanged.",
-        action: { label: "Retry", onClick: () => latest.current.onRetry() },
+        action: { label: "Retry", onClick: () => retry.current() },
       });
+    } finally {
+      setStatus("idle");
     }
   }
+
+  useEffect(() => {
+    retry.current = () => void check();
+  });
 
   return {
     review,
     status,
     found,
-    open() {
-      if (!blocks || status === "checking") return;
-      toast.dismiss(`review-failed:${draftId}`);
-      if (!review || isStale(review, blocks)) void run();
+    run() {
+      if (status === "checking") return;
+      const current = readReview(draftId);
+      if (current && !isStale(current, readDraft(draftId))) {
+        toast("Nothing new to review", { id: `review-same:${draftId}`, description: "The essay hasn’t changed since its last review." });
+        return;
+      }
+      void check();
     },
   };
 }
 
-export type ViewMode = "write" | "review";
-
-/**
- * Which view the screen shows, kept in the URL (`view=review`) so a reload
- * comes back to the review. Review shows only while one is running or the
- * saved one still matches the text; otherwise the screen falls back to writing.
- */
-export function useViewMode(initial: ViewMode, flow: ReviewFlow, blocks: Block[] | null) {
-  const [mode, setModeState] = useState(initial);
-  const current = flow.status === "checking" || (!!flow.review && !!blocks && !isStale(flow.review, blocks));
-  const shown: ViewMode = mode === "review" && current ? "review" : "write";
-
-  function setMode(next: ViewMode) {
-    setModeState(next);
-    const url = new URL(window.location.href);
-    if (next === "review") url.searchParams.set("view", "review");
-    else url.searchParams.delete("view");
-    window.history.replaceState(null, "", url);
-  }
-
-  return [shown, setMode] as const;
-}
-
-/** Where the marks are now, numbered in reading order. Phrases edited away drop out. */
+/** Where the marks are now, numbered in reading order. Lost marks and ones overlapping an earlier mark sit out. */
 function placeMistakes(review: Review, blocks: Block[], seen: Record<string, number>): CorrectionMistake[] {
   const order = new Map(blocks.map((b, i) => [b.id, i]));
   const placed: CorrectionMistake[] = [];
   for (const m of review.mistakes) {
     const block = blocks.find((b) => b.id === m.blockId);
-    const needle = m.status === "fixed" || m.status === "revealed" ? (m.final ?? m.fix) : m.wrong;
-    const at = block && locate(block.text, needle, m.start, m.before);
-    if (!at) continue;
-    const overlaps = placed.some((p) => p.blockId === m.blockId && at.start < p.end && p.start < at.end);
+    if (m.lost || !block || m.end > block.text.length) continue;
+    const overlaps = placed.some((p) => p.blockId === m.blockId && m.start < p.end && p.start < m.end);
     if (overlaps) continue;
-    placed.push({ ...m, ...at, answered: m.answered ?? false, number: 0, seen: seen[m.category] ?? 0 });
+    placed.push({
+      ...m,
+      current: block.text.slice(m.start, m.end),
+      answered: m.answered ?? false,
+      number: 0,
+      seen: seen[m.category] ?? 0,
+    });
   }
   placed.sort((a, b) => order.get(a.blockId)! - order.get(b.blockId)! || a.start - b.start);
   return placed.map((m, i) => ({ ...m, number: i + 1 }));
@@ -167,86 +145,105 @@ export function ReviewProgress({ done, total }: { done: number; total: number })
 }
 
 /**
- * The review in the editor's own column: `heading` is whatever the screen
- * shows above its editor, and every paragraph keeps its place, empty ones
- * included, so the text sits where it was while writing.
+ * The review on the essay: `<Correction>` and its Layout around the screen's
+ * title and editor. The editor draws `Correction.Marks` and `Correction.Notes`
+ * per paragraph and takes `useCorrectionText()`; `ReviewAside` goes between
+ * the title and the editor. Without a review it's the plain essay.
  */
-export function ReviewView({
+export function EssayReview({
   draftId,
   flow,
   blocks,
   onBlocksChange,
-  heading,
+  editor,
+  children,
 }: {
   draftId: string;
   flow: ReviewFlow;
   blocks: Block[];
   onBlocksChange: (next: Block[]) => void;
-  heading: React.ReactNode;
+  editor: React.RefObject<EssayEditorHandle | null>;
+  children: React.ReactNode;
 }) {
   const seen = useEarlierCounts(draftId);
   const review = flow.review;
-  const checking = flow.status === "checking" || !review;
+  // A running review is about to replace these marks.
   const mistakes = useMemo(
     () => (review && flow.status === "idle" ? placeMistakes(review, blocks, seen) : []),
     [review, flow.status, blocks, seen],
   );
-  const block = (id: string) => blocks.find((b) => b.id === id)!;
 
   return (
     <Correction
       mistakes={mistakes}
       onCheck={async (id, attempt) => {
         const m = mistakes.find((x) => x.id === id)!;
-        const original = review!.mistakes.find((x) => x.id === id)!;
-        if (matchesAccepted(attempt, original.accept)) return { correct: true, feedback: "" };
+        const { accept } = review!.mistakes.find((x) => x.id === id)!;
+        if (matchesAccepted(attempt, accept)) return { correct: true, feedback: "" };
+        const block = blocks.find((b) => b.id === m.blockId)!;
         const { correct, feedback } = await checkFix({
           reviewId: review!.id,
-          sentence: sentenceAround(block(m.blockId).text, m.start, m.end),
+          sentence: sentenceAround(block.text, m.start, m.end),
           wrong: m.wrong,
           attempt,
           rule: m.rule,
-          accept: original.accept,
+          accept,
         });
         return { correct, feedback };
       }}
-      onFix={(id, final, how) => {
-        const next = applyFix(draftId, blocks, id, final, how);
-        if (next) onBlocksChange(next);
+      onResolve={(id, how, replacement) => {
+        let now = readDraft(draftId);
+        const m = readReview(draftId)?.mistakes.find((x) => x.id === id);
+        if (replacement !== undefined && m && !m.lost) {
+          now = now.map((b) =>
+            b.id === m.blockId ? { ...b, text: b.text.slice(0, m.start) + replacement + b.text.slice(m.end) } : b,
+          );
+          onBlocksChange(now);
+        }
+        resolveMistake(draftId, now, id, how);
       }}
       onChange={(id, patch) => updateMistake(draftId, id, patch)}
+      onFocusMark={(id) => {
+        // After this event's render: a fix put in the essay rewrites the
+        // textarea's value, which would send the caret to its end.
+        requestAnimationFrame(() => {
+          const m = readReview(draftId)?.mistakes.find((x) => x.id === id);
+          if (m && !m.lost) editor.current?.select(m.blockId, m.end);
+        });
+      }}
     >
-      <Correction.Layout aria-busy={checking || undefined}>
-        {heading}
-        {/* Interface copy stays out of the essay's column: the status, the
-            summary and the filters all head the notes column. */}
-        <Correction.Header>
-          <Correction.Aside className="grid gap-3">
-            {checking ? (
-              <>
-                <p className="text-label text-text-3" aria-live="polite">
-                  Reviewing your essay…
-                </p>
-                <ReviewTrace paragraphs={blocks.filter((b) => b.text.trim()).length} found={flow.found} />
-              </>
-            ) : (
-              <>
-                <Summary mistakes={mistakes} />
-                <Correction.Filters />
-              </>
-            )}
-          </Correction.Aside>
-        </Correction.Header>
-        <div className="flex flex-col gap-y-[1lh] font-serif text-essay">
-          {blocks.map((b) => (
-            <Correction.Row key={b.id}>
-              <Correction.Paragraph blockId={b.id} text={b.text} />
-              <Correction.Notes blockId={b.id} />
-            </Correction.Row>
-          ))}
-        </div>
-      </Correction.Layout>
+      <Correction.Layout aria-busy={flow.status === "checking" || undefined}>{children}</Correction.Layout>
     </Correction>
+  );
+}
+
+/**
+ * The review's own copy, kept out of the essay's column: while it runs, its
+ * trace; then the summary and the filters. At the head of the notes column
+ * when there's room, above the essay otherwise. Nothing before a first review.
+ */
+export function ReviewAside({ flow, blocks }: { flow: ReviewFlow; blocks: Block[] }) {
+  const checking = flow.status === "checking";
+  const mistakes = useMemo(() => (flow.review ? placeMistakes(flow.review, blocks, {}) : []), [flow.review, blocks]);
+  if (!checking && !flow.review) return null;
+  return (
+    <Correction.Header className="mt-6 group-data-[layout=margin]/margin:mt-0">
+      <Correction.Aside className="grid gap-3">
+        {checking ? (
+          <>
+            <p className="text-label text-text-3" aria-live="polite">
+              Reviewing your essay…
+            </p>
+            <ReviewTrace paragraphs={blocks.filter((b) => b.text.trim()).length} found={flow.found} />
+          </>
+        ) : (
+          <>
+            <Summary mistakes={mistakes} />
+            <Correction.Filters />
+          </>
+        )}
+      </Correction.Aside>
+    </Correction.Header>
   );
 }
 
@@ -295,14 +292,7 @@ function Summary({ mistakes }: { mistakes: CorrectionMistake[] }) {
       </div>
     );
   }
-  if (open > 0) {
-    return (
-      <p className="text-label text-text-3">
-        <span className="pointer-coarse:hidden">Click</span>
-        <span className="hidden pointer-coarse:inline">Tap</span> a highlight to fix it.
-      </p>
-    );
-  }
+  if (open > 0) return null;
   return (
     <div className="w-full rounded-card border bg-surface p-4">
       <h2 className="text-title">All {mistakes.length} done</h2>

@@ -26,12 +26,13 @@ A web writing editor for people preparing for the TEF writing exam (Expression �
 Reference: `docs/prototypes/correction-loop.html`. Open it in a browser; `?v=3` is Margin, the other versions are the rejected ones. Its AI checks are faked by matching against accepted answers.
 
 - All mistakes visible at once: numbered highlights in the text, teacher-style notes in a margin column next to each paragraph, filter chips per category (Prepositions, Agreement, Conjugation, Spelling).
-- Clicking a highlight or note turns the phrase into an inline input and expands the note: rule, short explanation, "you've made this N times before".
+- **On the essay itself (decided 2026-10-26):** there's no separate review screen. The essay stays editable under a review; highlights are drawn under the editor's text and notes sit beside each paragraph. Putting the caret in a highlight (a click, arrows) or clicking its note expands the note: rule, short explanation, "you've made this N times before". The writer rewrites the highlighted words in place, and the highlight follows the edit.
 - Enter checks the fix. Wrong → feedback and a hint. "Show answer" is available any time and shows the answer in the note, not in the text (decided 2026-10-25): the writer types it in, or puts it in with an icon button beside it. A fix after seeing the answer counts as shown, not fixed. Skip is always available, never a hard stop.
 - Rejected:
   - **Guided** (v1): one category at a time with a side panel. Hides the rest of the essay.
   - **Spotlight** (v2): one mistake at a time. Too slow with 13+ mistakes.
   - **Patterns** (v4): drills sentences pulled out of the essay. Loses in-place context, but its cross-essay memory belongs in Margin.
+  - **A separate review screen** (Review swapped the editor for read-only Margin, Edit swapped back; dropped 2026-10-26): two states for one essay. The essay always stays editable.
 - Not building: user-customizable correction modes (pick one way and ship it), drag-and-drop sentence reordering (parked until users ask for it unprompted).
 
 ### Home (decided 2026-10-24)
@@ -55,7 +56,7 @@ Explored in `/proto/dictionary` in two rounds: where it lives, then how the lang
 - **Placement, Margin:** the dictionary sits in the empty space left of the essay, the mirror of the review's notes on the right. No panel border or scrim; the essay never moves, open or hidden. Hidden, it folds to a "Dictionary ⌘K" button in the same spot. ⌘K (Ctrl+K) opens it or focuses the field; Escape goes back to the essay. It needs about 1312px of window; narrower, the same lookup opens in a sheet from the left (book icon in the app bar).
 - **Language, Pair:** above the field, `[Your language ▾] ⇄ Français`. The left side is what you type; ⇄ swaps. The other side is always French. Your language is a menu, each name in its own script (English names only beside non-Latin scripts).
 - **Search waits for a pause** (300ms) instead of running per keystroke; the previous result stays until then.
-- In the essay's writing view only, never in review.
+- On the essay at all times, review or not.
 - Rejected:
   - **Docked** column: moves the essay to re-center and takes 320px.
   - **Sheet** as the main form: its scrim hides the sentence you're looking a word up for. Kept only as the narrow-window fallback.
@@ -71,7 +72,7 @@ Explored in `/proto/dictionary` in two rounds: where it lives, then how the lang
 
 ### Selection lookup: On ask (decided 2026-10-25)
 
-Explored in a throwaway `/proto/selection` with three directions. Selecting French in the essay (or its title) can show what it means in your language, in a popover at the selection. Built into `<Dictionary>`, so it's on wherever the dictionary is: the essay's writing view, never review.
+Explored in a throwaway `/proto/selection` with three directions. Selecting French in the essay (or its title) can show what it means in your language, in a popover at the selection. Built into `<Dictionary>`, so it's on wherever the dictionary is: the essay, review or not.
 
 - **On ask:** a settled selection (on mouse up or a double-click; 350ms after Shift+arrows or touch handles stop) of 1–8 words in one paragraph shows a small "Translate ⌘K" pill above it. The meaning appears only when asked: click the pill or press ⌘K. It's fetched as soon as the pill shows (decided 2026-10-25), so asking feels instant; that's one Google call per settled selection, asked or not, including the many made only to retype. With French selected, ⌘K translates it; with nothing selected it opens the dictionary as before.
 - The pill grows into a card in the same place: the French in Literata italic, then the translation. Neither takes focus, so typing still replaces the selection. Escape or a click elsewhere closes it. Above the selection with a mouse, below it on touch screens (the system's copy/paste menu sits above).
@@ -92,16 +93,23 @@ Explored in a throwaway `/proto/selection` with three directions. Selecting Fren
 
 `cacheComponents` is on in `next.config.ts`, so every page prerenders a static shell. Read request-time data (`searchParams`, `params` without `generateStaticParams`, `cookies()`, `headers()`) inside a `<Suspense>` boundary with a skeleton fallback, never at the top of a page: outside Suspense it blocks the whole route (the dev overlay reports "Next.js encountered runtime data during prerendering"). See `app/write/page.tsx`. Browser-only state (localStorage drafts, carets, reviews) goes through `createLocalStore` in `lib/local-store.ts`, which renders `null` on the server and the stored value after hydration. Navigating away doesn't unmount a page: Cache Components hides it in React's `<Activity>`, so `useState` survives a trip Home and back while effects clean up and re-run. State that must end when the writer leaves (the timer) resets in a `useLayoutEffect` cleanup; see `essay-timer.tsx`.
 
+### Coffee mode and the word count (decided 2026-10-26)
+
+- **Coffee mode:** a coffee-cup button in the essay's app bar. On, only the writing and its word count are left: the app bar (crumb, timer, review progress, Review) and the review's marks, notes and summary fade out and turn invisible, holding their places so the text doesn't move. The button stays where it was, to turn it off. The dictionary is left as it is, since the writer can hide it themselves; the timer keeps running. Page state only, like the timer.
+- **Word count:** at the bottom left of the window, in the app bar's old label style. With essay text selected (in a paragraph or across them) it reads "12 of 201 words"; no other copy.
+
 ### Timer (decided 2026-10-25)
 
 - In the essay's app bar, off until started: a timer icon opens a popover with an optional "Minutes" field. Minutes count down; empty counts up. No sections, presets or exam durations: the writer sets their own.
 - Running, it shows the time with Pause/Resume and Stop. A countdown turns `text-warn` in its last 5 minutes (when it was longer than that) and stops itself at 0:00; a count-up stops itself after 4 hours. Either way a toast says so. The essay never locks.
 - It lives in the page only (`essay-timer.tsx`, never storage): closing the window or leaving the essay ends it. The old sample runs' clocks kept counting in localStorage for days; `legacy-storage.ts` clears them, and everything else those runs left behind, on opening an essay.
 
-### Review (decided 2026-10-24)
+### Review (decided 2026-10-24, one view since 2026-10-26)
 
-- **On demand:** a Review button in the app bar, any time. The editor can't know when writing is done. It swaps the editor for Margin; "Edit" swaps back.
-- **One review per essay:** reviewing unchanged text reopens the last review (no new call); reviewing changed text replaces it, because edits move the text and old marks would point at the wrong words. Fixes made in the review are written into the essay in place and don't count as changes.
+- **On demand:** a Review button in the app bar, any time and as often as the writer likes. The editor can't know when writing is done. There's one view: a review adds its marks and notes to the editable essay (no Edit/Review modes, no `view=review` URL). Writing goes on while a review runs; its marks land wherever their words are by then.
+- **Marks follow edits** (`app/write/marks.ts`): each edit to a paragraph is one replaced span, and marks in it shift, grow or shrink with it. A few letters typed at a mark's end grow it ("grand" → "grands"); a space doesn't. An edit that takes a mark's words out of its paragraph (split, merge, cut) loses it, and it's found again by its words and the text before them, so an undo or paste brings it back.
+- **Checking a fix:** Enter in a highlight whose words were changed, or the note's Check. Enter in an untouched highlight splits the paragraph as usual; Escape closes the note until the caret leaves those words. A correct fix moves the caret to the next open mistake.
+- **One review per essay:** pressing Review on text unchanged since the last review does nothing new (a toast says so); on changed text, a new review replaces the old one. Fixes made through the review don't count as changes.
 - **Memory counts each essay once**, by category, from its latest review, so reviewing three times doesn't inflate "you've made N … mistakes in earlier essays".
 
 ## AI
@@ -115,7 +123,7 @@ Vercel's AI SDK (v7: `instructions`, not `system`; structured output is `generat
 - `lib/ai/check.ts`: `checkEssay` (streamed; `onFound` gets the count of anchored mistakes as the model writes them out, for the review trace), `judgeFix`. Each call logs one JSON line (`ai.check` / `ai.fix`: arm, model, ms, mistakes, dropped quotes, tokens); that's what an A/B comparison is read from.
 - `lib/ai/correction.ts`: client-safe. The model-facing schema (no `.optional()` or numeric bounds: OpenAI's strict mode rejects some), `anchorMistakes` (the model quotes the wrong words; offsets are found here, and a quote not in the text is dropped, never guessed), `locate` (re-finds a mark after edits by the words before it), `matchesAccepted` (a fix matching an accepted answer passes with no model call).
 - `app/write/actions.ts`: the server functions the review calls. `reviewEssay` returns a `ReadableStream` of `found` events then `done`. Public POST endpoints: validate and cap input there, and add rate limiting before launch.
-- `app/write/review-store.ts` (reviews and memory in localStorage), `review.tsx` (the flow and the view), `correction.tsx` (the `<Correction>` compound).
+- `app/write/review-store.ts` (reviews and memory in localStorage, `trackEdit` moving marks with every edit through `marks.ts`), `review.tsx` (the flow, `EssayReview`, `ReviewAside`), `correction.tsx` (the `<Correction>` compound).
 
 ## Design system
 
@@ -127,10 +135,10 @@ We are building our own design system, held to shadcn's standard. **Before writi
   - Restyle it on arrival: swap shadcn's token classes (`bg-background`, `text-muted-foreground`, `bg-popover`, `ring-ring`, `border-input`…) for Ink's (`bg-raised`, `text-text-3`, `border-border-strong`…). Its classes generate nothing here. Don't add alias tokens for shadcn's names.
   - Replace its animation classes (`animate-in`, `fade-in-0`… from `tw-animate-css`) with our own motion; don't import `tw-animate-css`.
   - Never run `shadcn init`: its preset adds Geist as `--font-sans` and overwrites `--border` and `--primary`. `components.json` is hand-written; `shadcn add` only needs that. Added components import `cn` from `"cn"`: change it to `@/lib/utils`, whose `cn` knows our `text-*` sizes (the stock one drops `text-ui` next to `text-text-2`).
-- **Native for product components**, the ones that are Ink: essay editor, prompt card, timer, word count, lookup panel (on Command), app bar, the correction compound (`<Correction>`, `Correction.Filters`, `Correction.Paragraph`, Mark, FixInput, `Correction.Notes`/Note, Feedback), category tag, correction summary, essay history row, category trend bars, empty states.
+- **Native for product components**, the ones that are Ink: essay editor, prompt card, timer, word count, lookup panel (on Command), app bar, the correction compound (`<Correction>`, `Correction.Filters`, `Correction.Marks`, `Correction.Notes`/Note, Feedback), category tag, correction summary, essay history row, category trend bars, empty states.
 - **Build order:** tokens, motion pass, `DESIGN.md` and the `<Correction>` compound (Margin) are done → the phone Drawer for Margin's notes, lookup panel, essay history. When a component, variant or token changes, update its file in `docs/design/` in the same change.
-- **Component APIs:** composition over configuration; compound components sharing state through context (e.g. `<Correction>`, `Correction.Filters`, `Correction.Row`, `Correction.Paragraph`, `Correction.Notes`); `variant`/`size` plus a `className` for layout only (DESIGN.md rule 2); forward refs; spread remaining props; support controlled and uncontrolled state (`activeId`/`defaultActiveId`/`onActiveIdChange`).
-- **The correction view is not a rich-text editor:** read-only text with inline inputs, no `contenteditable`.
-- **The writing screen uses our own block editor** (`app/write/`), never a third-party rich-text editor (TipTap, Lexical, ProseMirror, Slate…) and never `contenteditable`. One auto-growing `<textarea>` per paragraph, so the browser handles typing, accents and IME; the editor handles what crosses paragraphs (Enter, Backspace/Delete at the edges, ↑/↓/←/→, paste, reordering by drag, menu or ⌘⇧↑/↓, and selections across paragraphs) and owns undo. A selection can't span textareas, so one that crosses paragraphs (⌘A, Shift+arrows, Shift+click, a drag) briefly swaps them for plain `<p>`s with the same metrics and uses the browser's own selection; any edit puts the textareas back. Drag uses pointer events with pointer capture, not HTML5 drag-and-drop. (Sentence reordering in the correction view is still parked.) Paragraphs are the unit the correction view highlights, so the model stays `{ id, text }[]` plain text. Block edits are pure functions in `blocks.ts` with tests (`bun test`); add a test with every new edit.
+- **Component APIs:** composition over configuration; compound components sharing state through context (e.g. `<Correction>`, `Correction.Filters`, `Correction.Marks`, `Correction.Notes`); `variant`/`size` plus a `className` for layout only (DESIGN.md rule 2); forward refs; spread remaining props; support controlled and uncontrolled state (`activeId`/`defaultActiveId`/`onActiveIdChange`).
+- **The correction view is not a rich-text editor:** its marks are a layer drawn under the editor's textareas (`renderUnderlay`), with the same text metrics and transparent text, and its notes go in each paragraph's block (`renderAfter`). No `contenteditable`.
+- **The writing screen uses our own block editor** (`app/write/`), never a third-party rich-text editor (TipTap, Lexical, ProseMirror, Slate…) and never `contenteditable`. One auto-growing `<textarea>` per paragraph, so the browser handles typing, accents and IME; the editor handles what crosses paragraphs (Enter, Backspace/Delete at the edges, ↑/↓/←/→, paste, reordering by drag, menu or ⌘⇧↑/↓, and selections across paragraphs) and owns undo. A selection can't span textareas, so one that crosses paragraphs (⌘A, Shift+arrows, Shift+click, a drag) briefly swaps them for plain `<p>`s with the same metrics and uses the browser's own selection; any edit puts the textareas back. Drag uses pointer events with pointer capture, not HTML5 drag-and-drop. (Sentence reordering in the correction view is still parked.) Enter at the end of a line starts a new line in the paragraph, and Enter again on that empty line takes it back and starts a new paragraph (decided 2026-10-26; how Notion leaves a list, not its plain blocks, where Enter always starts a new block); mid-line, Enter splits the paragraph. Paragraphs are the unit the correction view highlights, so the model stays `{ id, text }[]` plain text, with `\n` for lines inside a paragraph. Block edits are pure functions in `blocks.ts` with tests (`bun test`); add a test with every new edit.
 - **No shared component** until the code has been copy-pasted 2–3 times. shadcn primitives in `components/ui/` are the exception, added when a screen first needs one.
 - **Skills to use:** `emil-design-foundations`, `emil-color`, `emil-typography`, `emil-component-design`, `emil-animations`, `emil-design-system-docs`.

@@ -1,29 +1,38 @@
 "use client";
 
+import { CoffeeIcon } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import { AppBar, AppBarSkeleton } from "@/components/app-bar";
 import { TruncateWords } from "@/components/truncate-words";
 import { Button } from "@/components/ui/button";
-import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
-import { essayTitle, hasWriting, isSaved, removeEssay, saveEssay, useEssays } from "@/lib/essays";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { essayTitle, hasWriting, isSaved, removeEssay, saveEssay, TITLE_MAX, useEssays } from "@/lib/essays";
 import { cn } from "@/lib/utils";
 
-import { countWords, type Block } from "./blocks";
+import { countWords, type Block, type Caret } from "./blocks";
 import { caretX, isOnLastLine, offsetAtX } from "./caret";
+import { Correction, useCorrectionText } from "./correction";
 import { Dictionary } from "./dictionary";
-import { removeDraft, useCaret, useDraft } from "./draft-store";
-import { EssayEditor } from "./essay-editor";
+import { readDraft, removeDraft, useCaret, useDraft } from "./draft-store";
+import { EssayEditor, type EssayEditorHandle } from "./essay-editor";
 import { EssayTimer } from "./essay-timer";
 import { removeSampleRuns } from "./legacy-storage";
-import { ReviewProgress, ReviewView, useReviewFlow, useReviewProgress, useViewMode, type ViewMode } from "./review";
+import { EssayReview, ReviewAside, ReviewProgress, useReviewFlow, useReviewProgress } from "./review";
+import { trackEdit } from "./review-store";
 
 // The user's own essay: a title (their prompt, or any name) and the text.
 // An empty title and body are the empty state. The app bar holds the timer
-// (essay-timer.tsx), and Review, which swaps the editor for the correction
-// view and back.
+// (essay-timer.tsx), coffee mode and Review; the word count sits at the
+// bottom left. There's one view: a review adds its marks and notes to the
+// essay, which stays editable, and fixes are typed into it.
+//
+// Coffee mode leaves only the writing and its word count: the app bar and
+// the review's marks and notes fade out, with nothing moving. Its own button
+// stays where it was, to bring them back. The dictionary is left alone (the
+// writer can hide it), and the timer keeps running.
 //
 // Nothing is saved until something is written (lib/essays.ts): a new essay
 // (`fresh`, from New essay) opens on an id the list doesn't have yet.
@@ -33,11 +42,9 @@ const TITLE_ID = "essay-title";
 
 export function EssayScreen({
   id,
-  view = "write",
   fresh = false,
 }: {
   id: string;
-  view?: ViewMode;
   /** Opened from New essay: an unknown id is a blank page, not a missing essay. */
   fresh?: boolean;
 }) {
@@ -62,11 +69,14 @@ export function EssayScreen({
       discard();
     };
   }, [id]);
-  const flow = useReviewFlow(id, blocks, essay?.title ?? "", { onFailed: () => setMode("write"), onRetry: review });
-  const [mode, setMode] = useViewMode(view, flow, blocks);
-  // Where the writer left the caret, to put it back when the editor returns.
+  const flow = useReviewFlow(id, essay?.title ?? "");
+  // Where the writer left the caret, to put it back when the essay reopens.
   const [caret, setCaret] = useCaret(id);
   const progress = useReviewProgress(flow, blocks);
+  const editor = useRef<EssayEditorHandle>(null);
+  const [coffee, setCoffee] = useState(false);
+  // Words in the selection, while the essay has one.
+  const [selected, setSelected] = useState(0);
 
   if (essays === null || blocks === null) return <ScreenSkeleton />;
 
@@ -94,24 +104,30 @@ export function EssayScreen({
     else removeEssay(id);
   }
 
-  function onBodyChange(next: Block[]) {
+  function onBodyChange(next: Block[], landed: Caret | null = null) {
+    // The review's marks move with the text.
+    trackEdit(id, readDraft(id), next, landed);
     setBlocks(next);
     record({ title, words: countWords(next) });
   }
 
-  function review() {
-    flow.open();
-    setMode("review");
-    window.scrollTo({ top: 0 });
-  }
+  const checking = flow.status === "checking";
+  // What coffee mode hides fades out, then turns invisible: out of the Tab
+  // order and the accessibility tree, still holding its place.
+  const fade = cn("transition-[opacity,visibility] duration-200 ease-out", coffee && "invisible opacity-0");
 
   return (
-    <Dictionary enabled={mode === "write"}>
-      <AppBar>
+    <Dictionary>
+      <AppBar
+        className={cn(
+          "transition-[background-color,border-color] duration-200 ease-out",
+          coffee && "border-transparent bg-transparent",
+        )}
+      >
         <Dictionary.Trigger className="-ml-2" />
         {/* Only the title shrinks, ending on a whole word. py-3.5 gives Home's
             hit area room to reach 44px tall. */}
-        <p className="flex min-w-0 flex-1 items-baseline gap-1 py-3.5 text-label text-text-3">
+        <p className={cn("flex min-w-0 flex-1 items-baseline gap-1 py-3.5 text-label text-text-3", fade)}>
           <Link
             href="/home"
             className="relative shrink-0 transition-colors before:absolute before:-inset-y-3.5 before:-right-2 before:left-0 hover:text-text"
@@ -119,64 +135,53 @@ export function EssayScreen({
             Home
           </Link>
           <span aria-hidden>/</span>
-          <TruncateWords text={essayTitle({ title })} lang="fr" className="text-text" />
+          <TruncateWords text={essayTitle({ title })} keepLastWord lang="fr" className="text-text" />
         </p>
         <div className="flex shrink-0 items-center gap-3">
-          <EssayTimer />
-          <div className="flex h-4 items-center gap-3 text-label text-text-3">
-            {mode === "review" && progress && (
-              <>
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label="Coffee mode"
+                  aria-pressed={coffee}
+                  onClick={() => setCoffee((on) => !on)}
+                  className={cn(coffee && "text-text-3 hover:text-text")}
+                />
+              }
+            >
+              <CoffeeIcon />
+            </TooltipTrigger>
+            <TooltipContent>Coffee mode</TooltipContent>
+          </Tooltip>
+          <div className={cn("flex items-center gap-3", fade)}>
+            <EssayTimer />
+            {progress && (
+              <span className="flex h-4 items-center gap-3 text-label text-text-3">
                 <ReviewProgress {...progress} />
-                <Separator orientation="vertical" className="max-sm:hidden" />
-              </>
+              </span>
             )}
-            <span className={cn(mode === "review" && "max-sm:hidden")}>
-              {words.toLocaleString("en")} {words === 1 ? "word" : "words"}
-            </span>
+            <Button variant="outline" size="sm" onClick={flow.run} disabled={words === 0 || checking}>
+              {checking ? "Reviewing…" : "Review"}
+            </Button>
           </div>
-          {mode === "write" ? (
-            <Button variant="outline" size="sm" onClick={review} disabled={words === 0}>
-              Review
-            </Button>
-          ) : (
-            <Button variant="outline" size="sm" onClick={() => setMode("write")}>
-              Edit
-            </Button>
-          )}
         </div>
       </AppBar>
 
-      {mode === "review" ? (
-        // The same column and spacing as the editor below, so the text doesn't move.
-        <main className="mx-auto w-full max-w-3xl px-4 pb-40 sm:px-10">
-          <ReviewView
-            draftId={id}
-            flow={flow}
-            blocks={blocks}
-            onBlocksChange={onBodyChange}
-            heading={
-              <h1
-                lang="fr"
-                className={cn(
-                  "mt-9 mb-6 block w-full max-w-prose py-1 font-serif text-essay-title text-wrap",
-                  !title.trim() && "text-text-3",
-                )}
-              >
-                {essayTitle({ title })}
-              </h1>
-            }
-          />
-        </main>
-      ) : (
-        <main className="relative mx-auto w-full max-w-3xl px-4 sm:px-10">
-          <Dictionary.Margin />
+      <main className="relative mx-auto w-full max-w-3xl px-4 sm:px-10">
+        <Dictionary.Margin />
+        <EssayReview draftId={id} flow={flow} blocks={blocks} onBlocksChange={onBodyChange} editor={editor}>
           <TitleField
             value={title}
             autoFocus={isNew}
             onChange={(next) => record({ title: next, words })}
           />
-
-          <EssayEditor
+          {!coffee && <ReviewAside flow={flow} blocks={blocks} />}
+          <EssayBody
+            review={!coffee}
+            onSelectedText={(text) => setSelected(text.trim() ? countWords([{ id: "", text }]) : 0)}
+            handle={editor}
             id={BODY_ID}
             value={blocks}
             onValueChange={onBodyChange}
@@ -188,9 +193,29 @@ export function EssayScreen({
             onExitTop={focusTitle}
             className="mt-6 max-w-prose min-h-96 pb-40"
           />
-        </main>
-      )}
+        </EssayReview>
+      </main>
+
+      {/* The text scrolls under it, so it has the page's own background. */}
+      <p className="fixed bottom-4 left-4 z-10 bg-bg text-label text-text-3 tabular-nums sm:left-6">
+        {selected > 0 && `${selected.toLocaleString("en")} of `}
+        {words.toLocaleString("en")} {words === 1 ? "word" : "words"}
+      </p>
     </Dictionary>
+  );
+}
+
+/** The editor with the review's marks under each paragraph and its notes beside it; `review` off leaves only the text. */
+function EssayBody({ review, ...props }: React.ComponentProps<typeof EssayEditor> & { review: boolean }) {
+  const text = useCorrectionText();
+  if (!review) return <EssayEditor {...props} />;
+  return (
+    <EssayEditor
+      {...props}
+      {...text}
+      renderUnderlay={(b) => <Correction.Marks blockId={b.id} text={b.text} />}
+      renderAfter={(b) => <Correction.Notes blockId={b.id} />}
+    />
   );
 }
 
@@ -203,8 +228,9 @@ function focusTitle(x: number | null) {
   el.setSelectionRange(offset, offset);
 }
 
-// One line of title that wraps as it grows. Enter, ↓ on its last line or → at
-// its end moves into the essay (↓ keeps the caret's horizontal place); pasted line breaks become spaces. Literata's descenders and
+// One line of title that wraps as it grows, up to TITLE_MAX characters. Enter,
+// ↓ on its last line or → at its end moves into the essay (↓ keeps the
+// caret's horizontal place); pasted line breaks become spaces. Literata's descenders and
 // accents reach past the 1.2 line-height, so py-1 gives them room inside the
 // box (mt-9 instead of mt-10 keeps the text where it was) and nothing scrolls
 // or clips.
@@ -257,7 +283,8 @@ function TitleField({
       autoComplete="off"
       data-gramm="false"
       data-lt-active="false"
-      onChange={(e) => onChange(e.target.value.replace(/\s*\n\s*/g, " "))}
+      maxLength={TITLE_MAX}
+      onChange={(e) => onChange(e.target.value.replace(/\s*\n\s*/g, " ").slice(0, TITLE_MAX))}
       onKeyDown={(e) => {
         const el = e.currentTarget;
         const start = el.selectionStart;

@@ -1,5 +1,7 @@
 // The essay as a list of paragraph blocks, and the edits the editor makes to
 // it. Pure functions only: the editor component owns focus and the DOM.
+// A block's text may hold line breaks ("\n"): lines inside one paragraph,
+// made by Enter at the end of a line (pressEnter).
 
 export type Block = { id: string; text: string };
 
@@ -87,6 +89,34 @@ export function splitBlock(blocks: Block[], id: string, start: number, end: numb
   const head = { ...block, text: block.text.slice(0, start) };
   const tail = createBlock(block.text.slice(end));
   return { blocks: replaceAt(blocks, index, [head, tail]), caret: { blockId: tail.id, offset: 0 } };
+}
+
+/**
+ * Enter, the way it works at the end of a line: there it starts a new line
+ * in the same paragraph, and Enter again on that empty line takes it back
+ * out and starts a new paragraph instead. Anywhere else (mid-line, over a
+ * selection, in an empty paragraph) it splits the block (splitBlock).
+ */
+export function pressEnter(blocks: Block[], id: string, start: number, end: number): Edit {
+  const block = blocks[indexOf(blocks, id)];
+  const text = block.text;
+  const atLineEnd = start === end && text !== "" && (start === text.length || text[start] === "\n");
+  if (!atLineEnd) return splitBlock(blocks, id, start, end);
+
+  const onEmptyLine = start === 0 || text[start - 1] === "\n";
+  if (!onEmptyLine) return insertLineBreak(blocks, id, start);
+
+  // The empty line goes, with the line breaks on either side of it.
+  const head = { ...block, text: text.slice(0, Math.max(0, start - 1)) };
+  const tail = createBlock(text.slice(text[start] === "\n" ? start + 1 : start));
+  return { blocks: replaceAt(blocks, indexOf(blocks, id), [head, tail]), caret: { blockId: tail.id, offset: 0 } };
+}
+
+function insertLineBreak(blocks: Block[], id: string, at: number): Edit {
+  const index = indexOf(blocks, id);
+  const block = blocks[index];
+  const updated = { ...block, text: block.text.slice(0, at) + "\n" + block.text.slice(at) };
+  return { blocks: replaceAt(blocks, index, [updated]), caret: { blockId: id, offset: at + 1 } };
 }
 
 /**

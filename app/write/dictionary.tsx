@@ -378,6 +378,11 @@ function Lookup({ className }: { className?: string }) {
               setQuery(w);
               inputRef.current?.focus();
             }}
+            onRemove={(w, keyboard) => {
+              update({ recent: settings.recent.filter((r) => r !== w) });
+              // The button pressed is gone; from the keyboard, focus goes back to the field.
+              if (keyboard) inputRef.current?.focus();
+            }}
           />
         ) : term ? (
           <Result
@@ -458,7 +463,15 @@ function Pair() {
   );
 }
 
-function Start({ recent, onPick }: { recent: string[]; onPick: (word: string) => void }) {
+function Start({
+  recent,
+  onPick,
+  onRemove,
+}: {
+  recent: string[];
+  onPick: (word: string) => void;
+  onRemove: (word: string, keyboard: boolean) => void;
+}) {
   if (!recent.length) {
     return (
       <p className="flex items-center gap-2 px-1 py-4 text-label text-text-3">
@@ -471,15 +484,25 @@ function Start({ recent, onPick }: { recent: string[]; onPick: (word: string) =>
       <h3 className="eyebrow text-text-3">Recent</h3>
       <ul className="mt-2 grid gap-0.5">
         {recent.map((w) => (
-          <li key={w}>
+          <li key={w} className="group/recent relative">
             <button
               type="button"
               dir="auto"
               onClick={() => onPick(w)}
-              className="-mx-2 w-[calc(100%+1rem)] rounded-row px-2 py-1.5 text-left text-ui text-text-2 transition-colors duration-150 hover:bg-sunken hover:text-text"
+              className="-mx-2 w-[calc(100%+1rem)] rounded-row py-1.5 ps-2 pe-8 text-left text-ui text-text-2 transition-colors duration-150 hover:bg-sunken hover:text-text"
             >
               {w}
             </button>
+            {/* Shows with its row's hover or its own focus; always on touch screens, which can't hover. */}
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              aria-label={`Remove “${w}” from recent`}
+              onClick={(e) => onRemove(w, e.detail === 0)}
+              className="absolute top-1/2 -right-1 -translate-y-1/2 opacity-0 transition-opacity duration-150 group-hover/recent:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100"
+            >
+              <XIcon />
+            </Button>
           </li>
         ))}
       </ul>

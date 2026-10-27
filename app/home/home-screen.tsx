@@ -115,6 +115,7 @@ function Recent({ essays }: { essays: EssayMeta[] | null }) {
             >
               <TruncateWords
                 text={essayTitle(e)}
+                keepLastWord
                 lang="fr"
                 className={e.title.trim() ? "font-serif text-body" : "font-serif text-body text-text-3"}
               />

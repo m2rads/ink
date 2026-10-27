@@ -88,6 +88,9 @@ export function removeEssay(id: string) {
   if (essays.some((e) => e.id === id)) store.write(INDEX, essays.filter((e) => e.id !== id));
 }
 
+/** The longest title, in characters. */
+export const TITLE_MAX = 80;
+
 export function essayTitle(e: Pick<EssayMeta, "title">): string {
   return e.title.trim() || "Untitled";
 }

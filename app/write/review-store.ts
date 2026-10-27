@@ -2,34 +2,39 @@
 
 import { useMemo } from "react";
 
-import { CATEGORIES, contextBefore, locate, type Category, type Mistake } from "@/lib/ai/correction";
+import { CATEGORIES, contextBefore, type Category, type Mistake } from "@/lib/ai/correction";
 import { createLocalStore } from "@/lib/local-store";
 
-import type { Block } from "./blocks";
+import type { Block, Caret } from "./blocks";
+import { remapMarks } from "./marks";
 
 // The latest review of each draft, and the memory of mistakes across essays.
 // Both live in localStorage until there's a server, keyed by draft id (the
 // essay's id).
 //
-// One review per draft: reviewing again replaces it, because edits move the
-// text and old marks would point at the wrong words. For the same reason the
-// memory counts each draft once, from its latest review, so reviewing three
-// times doesn't triple "N times before".
+// One review per draft: reviewing again replaces it. The essay stays
+// editable under a review, so its marks follow every edit (trackEdit,
+// marks.ts) and a fix is typed straight into the essay. The memory counts
+// each draft once, from its latest review, so reviewing three times doesn't
+// triple "N times before".
 
 export type MarkStatus = "open" | "fixed" | "revealed" | "skipped";
 
 export type ReviewMistake = Omit<Mistake, "block"> & {
   blockId: string;
-  // start and end are offsets when last seen; marks are re-found with
-  // locate() before use.
-  /** The words before the mark, which locate() uses to find it after edits. */
+  // start and end are where the mark is in the essay now: trackEdit moves
+  // them with every edit, so the words between them are the writer's
+  // current attempt at the fix.
+  /** The words before the mark, to find it again once an edit has lost it. */
   before: string;
+  /** Its words, while an edit has taken them out of the essay; an undo or paste brings it back. */
+  lost?: string | null;
   status: MarkStatus;
   attempts: number;
   hinted: boolean;
   /** The answer was shown in the note (absent on reviews saved before it existed). */
   answered?: boolean;
-  /** What replaced `wrong` in the essay once fixed or revealed. */
+  /** The words that resolved it (fixed or revealed). */
   final: string | null;
 };
 
@@ -39,7 +44,7 @@ export type Review = {
   createdAt: string;
   arm: string;
   model: string;
-  /** The essay's text as reviewed, plus fixes made since; any other edit means a new review. */
+  /** The essay's text as reviewed, plus fixes made since; any other edit makes Review check again. */
   text: string[];
   mistakes: ReviewMistake[];
 };
@@ -84,28 +89,42 @@ export function isStale(review: Review, blocks: Block[]): boolean {
   return review.text.length !== blocks.length || review.text.some((t, i) => t !== blocks[i].text);
 }
 
+/**
+ * A review of `sent`, the text as it went to the check, with its marks moved
+ * to `current`: the essay stays editable while the check runs.
+ */
 export function newReview(
-  blocks: Block[],
+  sent: Block[],
   result: { arm: string; model: string; mistakes: Mistake[] },
   id = crypto.randomUUID(),
+  current = sent,
 ): Review {
+  const mistakes = result.mistakes.map(({ block, ...m }): ReviewMistake => ({
+    ...m,
+    blockId: sent[block].id,
+    before: contextBefore(sent[block].text, m.start),
+    status: "open",
+    attempts: 0,
+    hinted: false,
+    answered: false,
+    final: null,
+  }));
   return {
     id,
     createdAt: new Date().toISOString(),
     arm: result.arm,
     model: result.model,
-    text: blocks.map((b) => b.text),
-    mistakes: result.mistakes.map(({ block, ...m }) => ({
-      ...m,
-      blockId: blocks[block].id,
-      before: contextBefore(blocks[block].text, m.start),
-      status: "open",
-      attempts: 0,
-      hinted: false,
-      answered: false,
-      final: null,
-    })),
+    text: sent.map((b) => b.text),
+    mistakes: remapMarks(mistakes, sent, current),
   };
+}
+
+/** Move the review's marks with an edit from `prev` to `next`; `caret` is where it landed. */
+export function trackEdit(draftId: string, prev: Block[], next: Block[], caret?: Caret | null) {
+  const review = readReview(draftId);
+  if (!review) return;
+  const mistakes = remapMarks(review.mistakes, prev, next, caret);
+  if (mistakes !== review.mistakes) reviews.write(draftId, { review: { ...review, mistakes } });
 }
 
 /** Change a mistake's state without touching the essay. */
@@ -118,34 +137,27 @@ export function updateMistake(draftId: string, id: string, patch: Partial<Review
 }
 
 /**
- * Write a fix into the essay, in place: the marked words become `final` in
- * the draft, and the review records it. Returns the new blocks, or null if
- * the marked words aren't in the essay any more.
+ * Record a fix already in the essay: the words now in the mark resolve it.
+ * When nothing else changed since the review, the reviewed text takes the
+ * fix too, so Review has nothing new to check.
  */
-export function applyFix(
-  draftId: string,
-  blocks: Block[],
-  id: string,
-  final: string,
-  status: "fixed" | "revealed",
-): Block[] | null {
+export function resolveMistake(draftId: string, blocks: Block[], id: string, status: "fixed" | "revealed") {
   const review = readReview(draftId);
   const mistake = review?.mistakes.find((m) => m.id === id);
   const block = blocks.find((b) => b.id === mistake?.blockId);
-  if (!review || !mistake || !block) return null;
-  const at = locate(block.text, mistake.wrong, mistake.start, mistake.before);
-  if (!at) return null;
-
-  const text = block.text.slice(0, at.start) + final + block.text.slice(at.end);
-  const delta = final.length - (at.end - at.start);
-  const next = blocks.map((b) => (b.id === block.id ? { ...b, text } : b));
-  const mistakes = review.mistakes.map((m) => {
-    if (m.id === id) return { ...m, status, final, start: at.start, end: at.start + final.length };
-    if (m.blockId !== block.id || m.start < at.end) return m;
-    return { ...m, start: m.start + delta, end: m.end + delta };
+  if (!review || !mistake || !block) return;
+  const final = block.text.slice(mistake.start, mistake.end);
+  const unfixed = block.text.slice(0, mistake.start) + mistake.wrong + block.text.slice(mistake.end);
+  const onlyThis =
+    review.text.length === blocks.length &&
+    blocks.every((b, i) => (b.id === block.id ? unfixed : b.text) === review.text[i]);
+  reviews.write(draftId, {
+    review: {
+      ...review,
+      text: onlyThis ? blocks.map((b) => b.text) : review.text,
+      mistakes: review.mistakes.map((m) => (m.id === id ? { ...m, status, final } : m)),
+    },
   });
-  reviews.write(draftId, { review: { ...review, mistakes, text: next.map((b) => b.text) } });
-  return next;
 }
 
 // ---------- Memory across essays ----------

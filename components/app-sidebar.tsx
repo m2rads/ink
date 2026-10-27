@@ -61,6 +61,7 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
                   <SidebarMenuButton render={<Link href={essayHref(essay.id)} />}>
                     <TruncateWords
                       text={essayTitle(essay)}
+                      keepLastWord
                       lang="fr"
                       className={essay.title.trim() ? undefined : "text-text-3"}
                     />

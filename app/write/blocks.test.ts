@@ -9,6 +9,7 @@ import {
   mergeWithNext,
   mergeWithPrevious,
   moveBlock,
+  pressEnter,
   replaceRange,
   splitBlock,
   textBetween,
@@ -171,5 +172,37 @@ describe("moveBlock", () => {
 
   test("returns the same array when the block stays put", () => {
     expect(moveBlock(four, "b2", 2)).toBe(four);
+  });
+});
+
+describe("pressEnter", () => {
+  test("at the end of a paragraph starts a new line in it", () => {
+    const edit = pressEnter(doc("Bonjour"), "b0", 7, 7);
+    expect(texts(edit.blocks)).toEqual(["Bonjour\n"]);
+    expect(edit.caret).toEqual({ blockId: "b0", offset: 8 });
+  });
+
+  test("at the end of a line inside a paragraph starts a new line there", () => {
+    const edit = pressEnter(doc("Un\ndeux"), "b0", 2, 2);
+    expect(texts(edit.blocks)).toEqual(["Un\n\ndeux"]);
+    expect(edit.caret).toEqual({ blockId: "b0", offset: 3 });
+  });
+
+  test("again on the empty last line, takes the line back and starts a paragraph", () => {
+    const edit = pressEnter(doc("Bonjour\n", "Suite"), "b0", 8, 8);
+    expect(texts(edit.blocks)).toEqual(["Bonjour", "", "Suite"]);
+    expect(edit.caret).toEqual({ blockId: edit.blocks[1].id, offset: 0 });
+  });
+
+  test("on an empty line mid-paragraph, splits there without either line break", () => {
+    const edit = pressEnter(doc("Un\n\ndeux"), "b0", 3, 3);
+    expect(texts(edit.blocks)).toEqual(["Un", "deux"]);
+    expect(edit.caret).toEqual({ blockId: edit.blocks[1].id, offset: 0 });
+  });
+
+  test("mid-line, over a selection or in an empty paragraph, splits as before", () => {
+    expect(texts(pressEnter(doc("Bonjour le monde"), "b0", 8, 8).blocks)).toEqual(["Bonjour ", "le monde"]);
+    expect(texts(pressEnter(doc("Bonjour le monde"), "b0", 8, 16).blocks)).toEqual(["Bonjour ", ""]);
+    expect(texts(pressEnter(doc(""), "b0", 0, 0).blocks)).toEqual(["", ""]);
   });
 });

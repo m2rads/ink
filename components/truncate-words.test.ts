@@ -31,3 +31,20 @@ describe("fitWords", () => {
     expect(fitWords("Anticonstitutionnellement et plus", upTo(5))).toBe("Anticonstitutionnellement et plus");
   });
 });
+
+describe("fitWords, keeping the last word", () => {
+  const title = "Toutes les étudiants universitaires devraient obtenir leur diplôme";
+
+  test("keeps the last word after the ellipsis", () => {
+    expect(fitWords(title, upTo(44), true)).toBe("Toutes les étudiants universitaires… diplôme");
+    expect(fitWords(title, upTo(20), true)).toBe("Toutes les… diplôme");
+  });
+
+  test("keeps a spaced question mark with its word", () => {
+    expect(fitWords("Le télétravail devrait-il devenir la norme ?", upTo(25), true)).toBe("Le télétravail… norme ?");
+  });
+
+  test("drops the last word once no word fits before it", () => {
+    expect(fitWords(title, upTo(10), true)).toBe("Toutes…");
+  });
+});
