@@ -16,6 +16,11 @@ export type EssayInput = {
   /** The prompt the essay answers, when there is one. */
   prompt: string;
   paragraphs: string[];
+  /**
+   * What the grammar checker already underlines in each paragraph (lib/grammar.ts).
+   * The model is told to leave it alone, and any mark overlapping it is dropped.
+   */
+  underlined?: { start: number; end: number; message: string }[][];
 };
 
 export type EssayCheck = { arm: string; model: string; mistakes: Mistake[] };
@@ -44,20 +49,31 @@ export async function checkEssay(input: EssayInput, { model, onFound }: CheckOpt
     let found = 0;
     for await (const partial of stream.partialOutputStream) {
       const complete = (partial.mistakes ?? []).slice(0, -1) as ReportedMistake[];
-      const count = anchorMistakes(input.paragraphs, complete).mistakes.length;
+      const count = anchorMistakes(input.paragraphs, complete).mistakes.filter((m) => !underlinedAt(input, m)).length;
       if (count > found) onFound?.((found = count));
     }
     const [output, usage] = await Promise.all([stream.output, stream.usage]);
-    const { mistakes, dropped } = anchorMistakes(input.paragraphs, output.mistakes);
-    return { result: { mistakes }, log: { mistakes: mistakes.length, dropped: dropped.length, usage } };
+    const anchored = anchorMistakes(input.paragraphs, output.mistakes);
+    const mistakes = anchored.mistakes.filter((m) => !underlinedAt(input, m));
+    const repeated = anchored.mistakes.length - mistakes.length;
+    return { result: { mistakes }, log: { mistakes: mistakes.length, dropped: anchored.dropped.length, repeated, usage } };
   });
 }
 
 // Empty paragraphs keep their number, so the model's paragraph numbers match
 // the editor's blocks.
-function essayPrompt({ prompt, paragraphs }: EssayInput) {
+function essayPrompt({ prompt, paragraphs, underlined = [] }: EssayInput) {
   const body = paragraphs.map((p, i) => `[${i + 1}] ${p}`).join("\n\n");
-  return prompt.trim() ? `Exam prompt:\n${prompt.trim()}\n\nEssay:\n\n${body}` : `Essay:\n\n${body}`;
+  const essay = prompt.trim() ? `Exam prompt:\n${prompt.trim()}\n\nEssay:\n\n${body}` : `Essay:\n\n${body}`;
+  const known = underlined.flatMap((issues, i) =>
+    issues.map((u) => `[${i + 1}] "${paragraphs[i].slice(u.start, u.end)}": ${u.message}`),
+  );
+  return known.length ? `${essay}\n\nAlready underlined:\n${known.join("\n")}` : essay;
+}
+
+/** Whether a mark falls on something the grammar checker already underlines. */
+function underlinedAt({ underlined = [] }: EssayInput, m: Mistake) {
+  return (underlined[m.block] ?? []).some((u) => m.start < u.end && u.start < m.end);
 }
 
 export type FixInput = {

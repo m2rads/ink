@@ -42,3 +42,6 @@ next-env.d.ts
 
 # downloaded source data for build scripts (scripts/build-gender.ts)
 /.cache/
+
+# Grammalecte (GPL 3), fetched on install by scripts/fetch-grammalecte.ts
+/vendor/grammalecte/

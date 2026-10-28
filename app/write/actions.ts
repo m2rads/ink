@@ -7,10 +7,12 @@ import { matchesAccepted } from "@/lib/ai/correction";
 import { lookUpVerb, type VerbLookup } from "@/lib/conjugation";
 import { AVOIR, ÊTRE } from "@/lib/conjugation/auxiliaries";
 import { lookUpGender, type Gender } from "@/lib/gender";
+import { checkGrammar, type GrammarIssue } from "@/lib/grammar";
 import { LANGUAGE_CODES } from "@/lib/languages";
 import { translate } from "@/lib/translate";
 
-// The correction loop's two server functions, and the dictionary's lookup.
+// The correction loop's two server functions, the essay's grammar
+// underlines, and the dictionary's lookup.
 // They're public POST endpoints, so input is validated and capped here;
 // there's no account to check yet.
 // TODO: rate-limit per visitor before Ink is public, or anyone can spend the
@@ -34,9 +36,10 @@ export async function reviewEssay(input: z.input<typeof essaySchema>): Promise<R
   return new ReadableStream({
     async start(events) {
       try {
+        const underlined = essay.paragraphs.map(checkGrammar);
         const check = essay.paragraphs.every((p) => p.trim() === "")
           ? { arm: "none", model: "none", mistakes: [] }
-          : await checkEssay(essay, { onFound: (count) => events.enqueue({ type: "found", count }) });
+          : await checkEssay({ ...essay, underlined }, { onFound: (count) => events.enqueue({ type: "found", count }) });
         events.enqueue({ type: "done", check });
         events.close();
       } catch (error) {
@@ -44,6 +47,17 @@ export async function reviewEssay(input: z.input<typeof essaySchema>): Promise<R
       }
     },
   });
+}
+
+const grammarSchema = z.array(z.string().max(5_000)).max(60);
+
+/**
+ * Grammalecte's grammar and spelling mistakes in each paragraph, for the
+ * essay's underlines (lib/grammar.ts): where each is and its explanation.
+ * The editor sends only paragraphs it hasn't checked yet.
+ */
+export async function findGrammar(paragraphs: string[]): Promise<GrammarIssue[][]> {
+  return grammarSchema.parse(paragraphs).map(checkGrammar);
 }
 
 const fixSchema = z.object({

@@ -20,6 +20,7 @@ import { Dictionary } from "./dictionary";
 import { flushDraft, readDraft, removeDraft, useCaret, useDraft } from "./draft-store";
 import { EssayEditor, type EssayEditorHandle } from "./essay-editor";
 import { EssayTimer } from "./essay-timer";
+import { GrammarMarks, GrammarTip, useGrammar } from "./grammar";
 import { removeSampleRuns } from "./legacy-storage";
 import { EssayReview, ReviewAside, ReviewProgress, useReviewFlow, useReviewProgress } from "./review";
 import { trackEdit } from "./review-store";
@@ -226,17 +227,34 @@ export function EssayScreen({
   );
 }
 
-/** The editor with the review's marks under each paragraph and its notes beside it; `review` off leaves only the text. */
+const NO_BLOCKS: Block[] = [];
+
+/**
+ * The editor with Grammalecte's underlines and the review's marks under each
+ * paragraph, and the review's notes beside it; `review` off (coffee mode)
+ * leaves only the text. Grammalecte does the spelling too, so the browser's
+ * own spellcheck stays off.
+ */
 function EssayBody({ review, ...props }: React.ComponentProps<typeof EssayEditor> & { review: boolean }) {
   const text = useCorrectionText();
-  if (!review) return <EssayEditor {...props} />;
+  const grammar = useGrammar(props.value ?? NO_BLOCKS, review);
+  if (!review) return <EssayEditor {...props} spellCheck={false} />;
   return (
-    <EssayEditor
-      {...props}
-      {...text}
-      renderUnderlay={(b) => <Correction.Marks blockId={b.id} text={b.text} />}
-      renderAfter={(b) => <Correction.Notes blockId={b.id} />}
-    />
+    <>
+      <EssayEditor
+        {...props}
+        {...text}
+        spellCheck={false}
+        renderUnderlay={(b) => (
+          <>
+            <Correction.Marks blockId={b.id} text={b.text} />
+            <GrammarMarks text={b.text} issues={grammar(b)} />
+          </>
+        )}
+        renderAfter={(b) => <Correction.Notes blockId={b.id} />}
+      />
+      <GrammarTip root={BODY_ID} />
+    </>
   );
 }
 

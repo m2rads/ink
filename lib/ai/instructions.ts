@@ -29,6 +29,7 @@ Only clear errors in these four categories:
 - Punctuation and spacing, including the space before ? ! ; :.
 - Capitalization, except a sentence that starts in lowercase.
 - The same error twice in a row in one phrase: mark the phrase once.
+- Anything in the "Already underlined" list after the essay: a grammar checker already shows those to the learner. Spend your attention on what such rules miss, like a preposition a verb or noun requires (penser à, dépendre de), the tense or mood the meaning needs, and agreement across a sentence.
 
 If you hesitate about whether something is an error, it is not one. An essay with no mistakes gets an empty list.
 
