@@ -2,10 +2,11 @@ import { describe, expect, mock, test } from "bun:test";
 import { simulateReadableStream } from "ai";
 import { MockLanguageModelV4 } from "ai/test";
 
-import { checkEssay } from "./check";
+import { runReview } from "./check";
 import { DEFAULT_CONFIG, parseConfig, pickArm, type Arm } from "./config";
 import { resolveModel } from "./models";
-import { anchorMistakes, contextBefore, locate, matchesAccepted, sentenceAround, type ReportedMistake } from "./correction";
+import { contextBefore, locate, matchesAccepted, sentenceAround } from "./correction";
+import { anchorItems, nextLevel, type ReportedItem } from "./review";
 
 const quiet = { error: mock(), info: mock() };
 console.error = quiet.error;
@@ -52,49 +53,85 @@ describe("parseConfig", () => {
   });
 });
 
-const report = (r: Partial<ReportedMistake> & Pick<ReportedMistake, "paragraph" | "wrong">): ReportedMistake => ({
-  category: "spelling",
-  fix: "",
-  accept: [""],
-  rule: "",
-  explain: "",
-  hint: "",
+const report = (r: Partial<ReportedItem> & Pick<ReportedItem, "paragraph" | "quote">): ReportedItem => ({
+  kind: "fix",
+  title: "",
+  why: "",
+  answer: "x",
+  accept: [],
   ...r,
 });
 
-describe("anchorMistakes", () => {
+describe("anchorItems", () => {
   const paragraphs = ["Je travaille de la maison chaque jours.", "", "Il faut que les gens peuvent choisir. Les gens peuvent."];
 
-  test("pins quotes to offsets, in reading order", () => {
-    const { mistakes } = anchorMistakes(paragraphs, [
-      report({ paragraph: 3, wrong: "peuvent" }),
-      report({ paragraph: 1, wrong: "de la maison" }),
+  test("pins quotes to offsets, keeping the model's order of importance", () => {
+    const { items } = anchorItems(paragraphs, [
+      report({ paragraph: 3, quote: "peuvent" }),
+      report({ paragraph: 1, quote: "de la maison" }),
     ]);
-    expect(mistakes.map((m) => [m.block, m.start, m.end])).toEqual([
-      [0, 13, 25],
+    expect(items.map((m) => [m.block, m.start, m.end])).toEqual([
       [2, 21, 28],
+      [0, 13, 25],
     ]);
   });
 
   test("takes the next occurrence when a quote repeats", () => {
-    const { mistakes } = anchorMistakes(paragraphs, [
-      report({ paragraph: 3, wrong: "peuvent" }),
-      report({ paragraph: 3, wrong: "peuvent" }),
+    const { items } = anchorItems(paragraphs, [
+      report({ paragraph: 3, quote: "peuvent" }),
+      report({ paragraph: 3, quote: "peuvent" }),
     ]);
-    expect(mistakes.map((m) => m.start)).toEqual([21, 47]);
+    expect(items.map((m) => m.start)).toEqual([21, 47]);
   });
 
-  test("drops quotes that aren't in the paragraph, are out of range or overlap", () => {
-    const { mistakes, dropped } = anchorMistakes(paragraphs, [
-      report({ paragraph: 1, wrong: "chaque jours" }),
-      report({ paragraph: 1, wrong: "jours" }),
-      report({ paragraph: 1, wrong: "à la maison" }),
-      report({ paragraph: 9, wrong: "Je" }),
-      report({ paragraph: 1.5, wrong: "Je" }),
-      report({ paragraph: 1, wrong: "" }),
+  test("drops quotes that aren't in the paragraph, are out of range, overlap or weren't asked for", () => {
+    const { items, dropped } = anchorItems(
+      paragraphs,
+      [
+        report({ paragraph: 1, quote: "chaque jours" }),
+        report({ paragraph: 1, quote: "jours" }),
+        report({ paragraph: 1, quote: "à la maison" }),
+        report({ paragraph: 9, quote: "Je" }),
+        report({ paragraph: 1.5, quote: "Je" }),
+        report({ paragraph: 1, quote: "" }),
+        report({ paragraph: 3, quote: "choisir" }),
+      ],
+      new Set([0]),
+    );
+    expect(items).toHaveLength(1);
+    expect(dropped.map((d) => d.quote)).toEqual(["jours", "à la maison", "Je", "Je", "", "choisir"]);
+  });
+
+  test("keeps at most six changes and two strengths", () => {
+    const words = "un deux trois quatre cinq six sept huit neuf dix onze".split(" ");
+    const text = words.join(" ");
+    const { items } = anchorItems(
+      [text],
+      [
+        ...words.slice(0, 8).map((w) => report({ paragraph: 1, quote: w })),
+        ...words.slice(8).map((w) => report({ paragraph: 1, quote: w, kind: "keep" })),
+      ],
+    );
+    expect(items.filter((i) => i.kind !== "keep")).toHaveLength(6);
+    expect(items.filter((i) => i.kind === "keep")).toHaveLength(2);
+  });
+
+  test("an answer is always accepted; clarify and keep have none", () => {
+    const { items } = anchorItems(paragraphs, [
+      report({ paragraph: 1, quote: "chaque jours", answer: "chaque jour", accept: ["tous les jours"] }),
+      report({ paragraph: 3, quote: "choisir", kind: "clarify", answer: "décider", accept: ["décider"] }),
     ]);
-    expect(mistakes).toHaveLength(1);
-    expect(dropped.map((d) => d.wrong)).toEqual(["jours", "à la maison", "Je", "Je", ""]);
+    expect(items[0].accept).toEqual(["chaque jour", "tous les jours"]);
+    expect(items[1]).toMatchObject({ answer: "", accept: [] });
+  });
+});
+
+describe("level helpers", () => {
+  test("the next level is the next full one", () => {
+    expect(nextLevel("B1")).toBe("B2");
+    expect(nextLevel("B1+")).toBe("B2");
+    expect(nextLevel("B2+")).toBe("C1");
+    expect(nextLevel("C1+")).toBeNull();
   });
 });
 
@@ -105,14 +142,20 @@ describe("matchesAccepted", () => {
   });
 });
 
-describe("checkEssay", () => {
+describe("runReview", () => {
   const paragraphs = ["Je lis chaque jours.", "Il a parlé a sa mère."];
   const json = JSON.stringify({
-    mistakes: [
-      report({ paragraph: 1, wrong: "chaque jours", category: "agreement", fix: "chaque jour", accept: [] }),
-      report({ paragraph: 1, wrong: "invented" }),
-      report({ paragraph: 2, wrong: "a sa", category: "preposition", fix: "à sa", accept: ["à sa"] }),
+    task: "TEF A",
+    level: "B1",
+    caveat: "",
+    diagnosis: "Accuracy holds it at B1.",
+    skills: [{ skill: "accuracy", level: "B1" }],
+    items: [
+      report({ paragraph: 1, quote: "chaque jours", answer: "chaque jour", accept: [] }),
+      report({ paragraph: 1, quote: "invented" }),
+      report({ paragraph: 2, quote: "a sa", answer: "à sa", accept: ["à sa"] }),
     ],
+    focus: [{ title: "Prepositions", detail: "*à*" }],
   });
   // The text in 20-character deltas, the way a provider streams it.
   const model = () =>
@@ -138,20 +181,30 @@ describe("checkEssay", () => {
       }),
     });
 
-  test("returns anchored mistakes and the arm that made them", async () => {
-    const result = await checkEssay({ reviewId: "r1", prompt: "", paragraphs }, { model: model() });
+  test("returns the level, anchored items and the arm that made them", async () => {
+    const result = await runReview({ reviewId: "r1", prompt: "", paragraphs }, { model: model() });
     expect(result.arm).toBe("override");
     expect(result.model).toBe("mock/french");
-    expect(result.mistakes).toHaveLength(2);
-    expect(result.mistakes[0]).toMatchObject({ block: 0, start: 7, end: 19, category: "agreement" });
-    // The fix is always an accepted answer, even when the model leaves it out of accept.
-    expect(result.mistakes[0].accept).toEqual(["chaque jour"]);
+    expect(result.level).toBe("B1");
+    expect(result.items).toHaveLength(2);
+    expect(result.items[0]).toMatchObject({ block: 0, start: 7, end: 19, accept: ["chaque jour"] });
   });
 
-  test("counts mistakes as they stream in, skipping ones that don't anchor", async () => {
+  test("gives items only for the paragraphs asked about", async () => {
+    const result = await runReview({ reviewId: "r1", prompt: "", paragraphs, review: [1] }, { model: model() });
+    expect(result.items.map((i) => i.block)).toEqual([1]);
+  });
+
+  test("drops items on words the grammar checker underlines", async () => {
+    const underlined = [[], [{ start: 11, end: 15, message: "Confusion" }]];
+    const result = await runReview({ reviewId: "r1", prompt: "", paragraphs, underlined }, { model: model() });
+    expect(result.items.map((i) => i.quote)).toEqual(["chaque jours"]);
+  });
+
+  test("counts items as they stream in, skipping ones that don't anchor", async () => {
     const counts: number[] = [];
-    await checkEssay({ reviewId: "r1", prompt: "", paragraphs }, { model: model(), onFound: (n) => counts.push(n) });
-    // The last mistake is only complete in the final output, so the stream counts up to one before it.
+    await runReview({ reviewId: "r1", prompt: "", paragraphs }, { model: model(), onFound: (n) => counts.push(n) });
+    // The last item is only complete in the final output, so the stream counts up to one before it.
     expect(counts).toEqual([1]);
   });
 });

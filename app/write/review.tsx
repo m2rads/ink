@@ -1,80 +1,111 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
-import { CircleCheckIcon, CircleDashedIcon, LoaderCircleIcon } from "lucide-react";
+import { CheckIcon, CircleCheckIcon, CircleDashedIcon, LoaderCircleIcon } from "lucide-react";
+import { createContext, use, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
-import { Progress } from "@/components/ui/progress";
-import type { EssayCheck } from "@/lib/ai/check";
-import { matchesAccepted, sentenceAround } from "@/lib/ai/correction";
+import { Popover, PopoverContent } from "@/components/ui/popover";
+import { sentenceAround } from "@/lib/ai/correction";
+import { levelValue, nextLevel, NCLC, SKILL_LABEL, TASK_LABEL, type Kind, type Level } from "@/lib/ai/review";
 import { cn } from "@/lib/utils";
 
-import { checkFix, reviewEssay } from "./actions";
+import { checkItem, reviewEssay } from "./actions";
 import type { Block } from "./blocks";
-import { Correction, type CorrectionMistake } from "./correction";
 import { readDraft } from "./draft-store";
 import type { EssayEditorHandle } from "./essay-editor";
 import {
-  isStale,
-  newReview,
+  mergeReview,
+  readEarlierFocus,
   readReview,
-  resolveMistake,
-  saveReview,
-  updateMistake,
-  useEarlierCounts,
+  resolveItem,
+  unreviewed,
+  updateItem,
+  useFocusCounts,
   useReview,
   type Review,
+  type ReviewItem,
 } from "./review-store";
 
-// On-demand AI review, on the essay itself: the essay stays editable, and a
-// review only adds its marks and notes to it. Review can be pressed any time:
-// Ink can't know when writing is done. Pressing it on text unchanged since
-// the last review (fixes made in it don't count) does nothing new; on changed
-// text, a new review replaces the old. Writing goes on while it runs: its
-// marks land wherever their words are by then.
+// The AI review, as a coach (AGENTS.md, Review): where the writer stands,
+// the one thing holding them there, and the few changes that take this essay
+// up one level. On the essay itself, which stays editable: in the text only
+// underlines, and a card at the words when the caret or a click lands in
+// one; everything else in the column on the right (above the essay when
+// there's no room).
 //
-// A failed review is a toast with Retry; the last review, if any, stays.
+// Review can be pressed any time: Ink can't know when writing is done. The
+// first review covers the whole essay; after that only paragraphs new or
+// changed since (a dot in the gutter marks them), and with nothing new a
+// toast offers Review again. Writing goes on while it runs: its items land
+// wherever their words are by then. A failed review is a toast with Retry;
+// the last review, if any, stays.
 
 export type ReviewFlow = {
   review: Review | null | undefined;
   status: "idle" | "checking";
-  /** While checking: how many mistakes the model has written out so far. */
+  /** While checking: how many items the model has written out so far. */
   found: number;
-  /** Review the essay, unless it hasn't changed since the last review. */
-  run: () => void;
+  /** How many paragraphs the running review covers. */
+  covering: number;
+  /** Review what's new since the last review; `again` reviews everything. */
+  run: (again?: boolean) => void;
 };
 
 export function useReviewFlow(draftId: string, prompt: string): ReviewFlow {
   const review = useReview(draftId);
   const [status, setStatus] = useState<ReviewFlow["status"]>("idle");
   const [found, setFound] = useState(0);
+  const [covering, setCovering] = useState(0);
 
-  // The toast outlives this render; Retry must review the text as it is
-  // when pressed, not as it was when the review failed.
-  const retry = useRef(() => {});
+  // The toast outlives this render; Retry and Review again must use the text
+  // as it is when pressed.
+  const latest = useRef<(again?: boolean) => void>(() => {});
 
-  async function check() {
+  async function check(again: boolean) {
     const blocks = readDraft(draftId);
+    const old = readReview(draftId);
+    const todo = again || !old ? blocks.filter((b) => b.text.trim()) : unreviewed(old, blocks);
+    if (!todo.length) {
+      toast("Nothing new to review", {
+        id: `review-same:${draftId}`,
+        action: { label: "Review again", onClick: () => latest.current(true) },
+      });
+      return;
+    }
+    const covered = new Set(todo.map((b) => b.id));
     setStatus("checking");
     setFound(0);
+    setCovering(todo.length);
     toast.dismiss(`review-failed:${draftId}`);
     const id = crypto.randomUUID();
     try {
-      const events = await reviewEssay({ reviewId: id, prompt, paragraphs: blocks.map((b) => b.text) });
+      const events = await reviewEssay({
+        reviewId: id,
+        prompt,
+        paragraphs: blocks.map((b) => b.text),
+        review: blocks.flatMap((b, i) => (covered.has(b.id) ? [i] : [])),
+        shown: (old?.items ?? [])
+          .filter((it) => it.status === "open" && !covered.has(it.blockId))
+          .flatMap((it): [number, string][] => {
+            const i = blocks.findIndex((b) => b.id === it.blockId);
+            return i < 0 ? [] : [[i, it.title.slice(0, 200)]];
+          }),
+        earlier: readEarlierFocus(draftId),
+      });
       const reader = events.getReader();
-      let result: EssayCheck | undefined;
+      let result;
       for (let read = await reader.read(); !read.done; read = await reader.read()) {
         if (read.value.type === "found") setFound(read.value.count);
-        else result = read.value.check;
+        else result = read.value.result;
       }
       if (!result) throw new Error("Review ended without a result");
-      saveReview(draftId, newReview(blocks, result, id, readDraft(draftId)));
+      mergeReview(draftId, blocks, covered, result, id, readDraft(draftId));
     } catch (error) {
       console.error(error);
       toast.error("Review failed", {
         id: `review-failed:${draftId}`,
         description: "Your essay is unchanged.",
-        action: { label: "Retry", onClick: () => retry.current() },
+        action: { label: "Retry", onClick: () => latest.current(again) },
       });
     } finally {
       setStatus("idle");
@@ -82,185 +113,525 @@ export function useReviewFlow(draftId: string, prompt: string): ReviewFlow {
   }
 
   useEffect(() => {
-    retry.current = () => void check();
+    latest.current = (again = false) => void check(again);
   });
 
   return {
     review,
     status,
     found,
-    run() {
-      if (status === "checking") return;
-      const current = readReview(draftId);
-      if (current && !isStale(current, readDraft(draftId))) {
-        toast("Nothing new to review", { id: `review-same:${draftId}`, description: "The essay hasn’t changed since its last review." });
-        return;
-      }
-      void check();
+    covering,
+    run(again = false) {
+      if (status !== "checking") void check(again);
     },
   };
 }
 
-/** Where the marks are now, numbered in reading order. Lost marks and ones overlapping an earlier mark sit out. */
-function placeMistakes(review: Review, blocks: Block[], seen: Record<string, number>): CorrectionMistake[] {
+// ---------- On the essay ----------
+
+type ReviewContextValue = {
+  draftId: string;
+  flow: ReviewFlow;
+  blocks: Block[];
+  editor: React.RefObject<EssayEditorHandle | null>;
+  /** The item whose card is open. */
+  activeId: string | null;
+  setActiveId: (id: string | null) => void;
+};
+
+const ReviewContext = createContext<ReviewContextValue | null>(null);
+
+function useReviewContext() {
+  const ctx = use(ReviewContext);
+  if (!ctx) throw new Error("Review parts must be inside <EssayReview>");
+  return ctx;
+}
+
+/** Open items with their words in the essay now, in reading order. */
+function placed(review: Review | null | undefined, blocks: Block[]) {
+  if (!review) return [];
   const order = new Map(blocks.map((b, i) => [b.id, i]));
-  const placed: CorrectionMistake[] = [];
-  for (const m of review.mistakes) {
-    const block = blocks.find((b) => b.id === m.blockId);
-    if (m.lost || !block || m.end > block.text.length) continue;
-    const overlaps = placed.some((p) => p.blockId === m.blockId && m.start < p.end && p.start < m.end);
-    if (overlaps) continue;
-    placed.push({
-      ...m,
-      current: block.text.slice(m.start, m.end),
-      answered: m.answered ?? false,
-      number: 0,
-      seen: seen[m.category] ?? 0,
-    });
-  }
-  placed.sort((a, b) => order.get(a.blockId)! - order.get(b.blockId)! || a.start - b.start);
-  return placed.map((m, i) => ({ ...m, number: i + 1 }));
-}
-
-export function useReviewProgress(flow: ReviewFlow, blocks: Block[] | null) {
-  return useMemo(() => {
-    if (!flow.review || !blocks || flow.status !== "idle") return null;
-    const placed = placeMistakes(flow.review, blocks, {});
-    const done = placed.filter((m) => m.status === "fixed" || m.status === "revealed").length;
-    return { done, total: placed.length };
-  }, [flow.review, flow.status, blocks]);
-}
-
-/** "4 of 13 done" and a bar, for the app bar. */
-export function ReviewProgress({ done, total }: { done: number; total: number }) {
-  if (total === 0) return <span>No mistakes</span>;
-  return (
-    <span className="flex items-center gap-2">
-      <span>
-        {done} of {total} done
-      </span>
-      <Progress value={(done / total) * 100} aria-label="Mistakes resolved" className="w-16 max-sm:hidden" />
-    </span>
-  );
+  return review.items
+    .filter((it) => !it.lost && order.has(it.blockId))
+    .sort((a, b) => order.get(a.blockId)! - order.get(b.blockId)! || a.start - b.start);
 }
 
 /**
- * The review on the essay: `<Correction>` and its Layout around the screen's
- * title and editor. The editor draws `Correction.Marks` and `Correction.Notes`
- * per paragraph and takes `useCorrectionText()`; `ReviewAside` goes between
- * the title and the editor. Without a review it's the plain essay.
+ * The review around the title and the editor: its state, the margin layout
+ * that places `ReviewAside` beside the essay (or above it), and the item card.
+ * Put `ReviewAside` between the title and the editor, `ReviewMarks` in the
+ * editor's underlay, `ReviewPending` after each paragraph, and spread
+ * `useReviewText()` on the editor.
  */
 export function EssayReview({
   draftId,
   flow,
   blocks,
-  onBlocksChange,
   editor,
   children,
 }: {
   draftId: string;
   flow: ReviewFlow;
   blocks: Block[];
-  onBlocksChange: (next: Block[]) => void;
   editor: React.RefObject<EssayEditorHandle | null>;
   children: React.ReactNode;
 }) {
-  const seen = useEarlierCounts(draftId);
-  const review = flow.review;
-  // A running review is about to replace these marks.
-  const mistakes = useMemo(
-    () => (review && flow.status === "idle" ? placeMistakes(review, blocks, seen) : []),
-    [review, flow.status, blocks, seen],
-  );
-
+  const [activeId, setActiveId] = useState<string | null>(null);
   return (
-    <Correction
-      mistakes={mistakes}
-      onCheck={async (id, attempt) => {
-        const m = mistakes.find((x) => x.id === id)!;
-        const { accept } = review!.mistakes.find((x) => x.id === id)!;
-        if (matchesAccepted(attempt, accept)) return { correct: true, feedback: "" };
-        const block = blocks.find((b) => b.id === m.blockId)!;
-        const { correct, feedback } = await checkFix({
-          reviewId: review!.id,
-          sentence: sentenceAround(block.text, m.start, m.end),
-          wrong: m.wrong,
-          attempt,
-          rule: m.rule,
-          accept,
-        });
-        return { correct, feedback };
-      }}
-      onResolve={(id, how, replacement) => {
-        let now = readDraft(draftId);
-        const m = readReview(draftId)?.mistakes.find((x) => x.id === id);
-        if (replacement !== undefined && m && !m.lost) {
-          now = now.map((b) =>
-            b.id === m.blockId ? { ...b, text: b.text.slice(0, m.start) + replacement + b.text.slice(m.end) } : b,
-          );
-          onBlocksChange(now);
-        }
-        resolveMistake(draftId, now, id, how);
-      }}
-      onChange={(id, patch) => updateMistake(draftId, id, patch)}
-      onFocusMark={(id) => {
-        // After this event's render: a fix put in the essay rewrites the
-        // textarea's value, which would send the caret to its end.
-        requestAnimationFrame(() => {
-          const m = readReview(draftId)?.mistakes.find((x) => x.id === id);
-          if (m && !m.lost) editor.current?.select(m.blockId, m.end);
-        });
-      }}
-    >
-      <Correction.Layout aria-busy={flow.status === "checking" || undefined}>{children}</Correction.Layout>
-    </Correction>
+    <ReviewContext value={{ draftId, flow, blocks, editor, activeId, setActiveId }}>
+      <Layout>{children}</Layout>
+      <ItemCard />
+    </ReviewContext>
   );
 }
 
+/** For the editor: the caret in an item's words opens its card; Escape closes it until the caret leaves them. */
+export function useReviewText() {
+  const { flow, blocks, activeId, setActiveId } = useReviewContext();
+  const dismissed = useRef<string | null>(null);
+  return {
+    onTextSelect(blockId: string, start: number, end: number) {
+      const hit = placed(flow.review, blocks).find(
+        (it) => it.status === "open" && it.blockId === blockId && start >= it.start && end <= it.end && start < it.end,
+      );
+      const id = hit?.id ?? null;
+      if (id !== dismissed.current) dismissed.current = null;
+      if (id !== activeId && id !== dismissed.current) setActiveId(id);
+    },
+    onTextKeyDown(_block: Block, e: React.KeyboardEvent<HTMLTextAreaElement>) {
+      if (e.key === "Escape" && activeId) {
+        dismissed.current = activeId;
+        setActiveId(null);
+      }
+    },
+  };
+}
+
+const MARK: Record<Kind, string> = {
+  fix: "decoration-warn/70",
+  better: "decoration-c-prep/70",
+  clarify: "decoration-text-3 decoration-dashed",
+  keep: "decoration-ok/60",
+};
+
+const ACTIVE: Record<Kind, string> = {
+  fix: "bg-warn/12 decoration-warn",
+  better: "bg-c-prep/12 decoration-c-prep",
+  clarify: "bg-sunken decoration-text-3 decoration-dashed",
+  keep: "bg-ok/12 decoration-ok",
+};
+
 /**
- * The review's own copy, kept out of the essay's column: while it runs, its
- * trace; then the summary and the filters. At the head of the notes column
- * when there's room, above the essay otherwise. Nothing before a first review.
+ * A paragraph's items, for the editor's underlay: its text, transparent
+ * there, with each open item's words underlined in its kind's color and the
+ * open card's words tinted. Padding is cancelled by negative margin, so no
+ * letter moves.
  */
-export function ReviewAside({ flow, blocks }: { flow: ReviewFlow; blocks: Block[] }) {
-  const checking = flow.status === "checking";
-  const mistakes = useMemo(() => (flow.review ? placeMistakes(flow.review, blocks, {}) : []), [flow.review, blocks]);
-  if (!checking && !flow.review) return null;
+export function ReviewMarks({ block }: { block: Block }) {
+  const { flow, blocks, activeId } = useReviewContext();
+  const here = placed(flow.review, blocks).filter(
+    (it) => it.blockId === block.id && it.status === "open" && it.end <= block.text.length,
+  );
+  const parts: React.ReactNode[] = [];
+  let at = 0;
+  for (const it of here) {
+    if (it.start < at) continue;
+    parts.push(block.text.slice(at, it.start));
+    parts.push(
+      <span
+        key={it.id}
+        data-item={it.id}
+        className={cn(
+          "-mx-0.5 rounded-row px-0.5 underline decoration-[1.5px] underline-offset-4 decoration-skip-ink-none transition-colors duration-150 ease-out",
+          it.id === activeId ? ACTIVE[it.kind] : MARK[it.kind],
+        )}
+      >
+        {block.text.slice(it.start, it.end)}
+      </span>,
+    );
+    at = it.end;
+  }
+  parts.push(block.text.slice(at));
+  return <div data-slot="review-marks">{parts}</div>;
+}
+
+/** After a paragraph: a dot in the gutter while it has text the review hasn't seen. */
+export function ReviewPending({ block }: { block: Block }) {
+  const { flow } = useReviewContext();
+  if (!flow.review || !block.text.trim() || flow.review.reviewed[block.id] === block.text) return null;
   return (
-    <Correction.Header className="mt-6 group-data-[layout=margin]/margin:mt-0">
-      <Correction.Aside className="grid gap-3">
-        {checking ? (
+    <span
+      role="img"
+      aria-label="Not reviewed yet"
+      className="absolute top-3 -left-4 size-1.5 rounded-full bg-border-strong sm:-left-5"
+    />
+  );
+}
+
+// ---------- The card at the words ----------
+
+const KIND_LABEL: Record<Kind, string> = {
+  fix: "Holds you below",
+  better: "Wording",
+  clarify: "Content",
+  keep: "Keep doing this",
+};
+
+const KIND_DOT: Record<Kind, string> = {
+  fix: "bg-warn",
+  better: "bg-c-prep",
+  clarify: "bg-text-3",
+  keep: "bg-ok",
+};
+
+/** An action in a card: text, no padding, bottom right; its mousedown keeps the caret in the essay. */
+const TEXT_ACTION =
+  "relative justify-self-end text-caption text-text-3 transition-colors duration-150 ease-out before:absolute before:-inset-x-2 before:-inset-y-3 hover:text-text disabled:pointer-events-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring";
+
+/**
+ * The open item's card, above its words (below when there's no room, the app
+ * bar included: DESIGN.md rule 10). Nothing in it takes focus, so the caret
+ * stays in the essay.
+ */
+function ItemCard() {
+  const { flow, blocks, activeId, setActiveId } = useReviewContext();
+  const item = placed(flow.review, blocks).find((it) => it.id === activeId && it.status === "open") ?? null;
+  const next = flow.review ? nextLevel(flow.review.level) : null;
+  return (
+    <Popover open={!!item} onOpenChange={(open) => !open && setActiveId(null)}>
+      <PopoverContent
+        // Read when it opens: the words are in the editor's underlay.
+        anchor={() => (item ? document.querySelector(`[data-item="${item.id}"]`) : null)}
+        side="top"
+        sideOffset={6}
+        collisionPadding={{ top: 64, right: 8, bottom: 8, left: 8 }}
+        initialFocus={false}
+        finalFocus={false}
+        className="w-80 gap-2 p-3 text-label"
+      >
+        {item && (
           <>
-            <p className="text-label text-text-3" aria-live="polite">
-              Reviewing your essay…
+            <p className="flex items-center gap-2 text-caption text-text-3">
+              <span aria-hidden className={cn("size-2 rounded-full", KIND_DOT[item.kind])} />
+              {item.kind === "fix" ? `${KIND_LABEL.fix} ${next ?? "the next level"}` : KIND_LABEL[item.kind]}
             </p>
-            <ReviewTrace paragraphs={blocks.filter((b) => b.text.trim()).length} found={flow.found} />
-          </>
-        ) : (
-          <>
-            <Summary mistakes={mistakes} />
-            <Correction.Filters />
+            <p className="text-ui text-text">
+              <Rich text={item.title} />
+            </p>
+            <p className="text-text-2">
+              <Rich text={item.why} />
+            </p>
+            {item.feedback && (
+              <p className="text-text">
+                <Rich text={item.feedback} />
+              </p>
+            )}
+            <ItemAction item={item} />
           </>
         )}
-      </Correction.Aside>
-    </Correction.Header>
+      </PopoverContent>
+    </Popover>
   );
 }
 
 /**
- * What the check is doing, in the filter chips' place (and, above the essay,
- * their height), so the essay doesn't shift when they arrive. Only what really happens: the
- * model reads the whole essay first, then writes the mistakes out one by one.
+ * The card's action. Changed words, or a changed paragraph for an item with
+ * no answer, can be checked by the AI again; otherwise the answer on request
+ * (the writer still types it). Words that match an answer close the item on
+ * their own (review-store's settle).
  */
-function ReviewTrace({ paragraphs, found }: { paragraphs: number; found: number }) {
+function ItemAction({ item }: { item: ReviewItem }) {
+  const { draftId, flow, blocks } = useReviewContext();
+  const [checking, setChecking] = useState(false);
+  const text = blocks.find((b) => b.id === item.blockId)?.text ?? "";
+  const words = text.slice(item.start, item.end);
+  const changed = item.kind !== "keep" && (words !== item.quote || (!item.answer && flow.review?.reviewed[item.blockId] !== text));
+
+  if (changed) {
+    return (
+      <button
+        type="button"
+        disabled={checking}
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={async () => {
+          setChecking(true);
+          try {
+            const verdict = await checkItem({
+              reviewId: flow.review!.id,
+              passage: item.answer ? sentenceAround(text, item.start, item.end) : text,
+              quote: item.quote,
+              title: item.title,
+              why: item.why,
+              words,
+              accept: item.accept,
+            });
+            if (verdict.resolved) resolveItem(draftId, readDraft(draftId), item.id);
+            else updateItem(draftId, item.id, { feedback: verdict.feedback });
+          } catch (error) {
+            console.error(error);
+            toast.error("Check failed", { description: "Try again in a moment." });
+          } finally {
+            setChecking(false);
+          }
+        }}
+        className={TEXT_ACTION}
+      >
+        {checking ? "Checking…" : "Check"}
+      </button>
+    );
+  }
+  if (!item.answer) return null;
+  return item.answered ? (
+    <p lang="fr" className="font-serif text-ui text-text">
+      {item.answer}
+    </p>
+  ) : (
+    <button
+      type="button"
+      onMouseDown={(e) => e.preventDefault()}
+      onClick={() => updateItem(draftId, item.id, { answered: true })}
+      className={TEXT_ACTION}
+    >
+      Answer
+    </button>
+  );
+}
+
+// ---------- The column ----------
+
+/**
+ * Everything the review says besides the underlines: while it runs, what it's
+ * doing; then the estimated level, each skill, this essay's changes and what
+ * to work on across essays. Nothing before a first review.
+ */
+export function ReviewAside() {
+  const { flow, blocks } = useReviewContext();
+  const checking = flow.status === "checking";
+  if (!checking && !flow.review) return null;
+  return (
+    <div data-review-aside className={cn(ASIDE, "font-sans")}>
+      <div className="grid gap-5 group-data-[layout=margin]/review:sticky group-data-[layout=margin]/review:top-20">
+        {checking && <Trace paragraphs={flow.covering} found={flow.found} />}
+        {flow.review && (
+          <div className={cn("grid gap-5 transition-opacity duration-200", checking && "opacity-50")}>
+            <LevelSection review={flow.review} />
+            <Changes review={flow.review} blocks={blocks} />
+            <Focus review={flow.review} />
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The estimate, said as one: a band and an NCLC range, never a point score,
+ * with what it rests on and any caveat the AI gave.
+ */
+function LevelSection({ review }: { review: Review }) {
+  const next = nextLevel(review.level);
+  return (
+    <section aria-label="Estimated level" className="grid gap-3">
+      <p className="text-label text-text-3 tabular-nums">
+        {review.task !== "unknown" && `${TASK_LABEL[review.task]} · `}estimate from {review.words} words
+      </p>
+      <table className="w-full table-fixed border-collapse text-label tabular-nums">
+        <caption className="sr-only">Your level now and the next one</caption>
+        <colgroup>
+          <col className="w-14" />
+          <col className="w-12" />
+          <col />
+        </colgroup>
+        <tbody>
+          <LevelRow label="Now" level={review.level} />
+          {next && <LevelRow label="Next" level={next} quiet />}
+        </tbody>
+      </table>
+      {review.caveat && <p className="text-label text-text-2">{review.caveat}</p>}
+      <p className="text-ui text-text-2 text-pretty">
+        <Rich text={review.diagnosis} />
+      </p>
+      <Skills review={review} target={next} />
+    </section>
+  );
+}
+
+function LevelRow({ label, level, quiet }: { label: string; level: Level; quiet?: boolean }) {
+  return (
+    <tr>
+      <th scope="row" className="py-0.5 text-start font-normal text-text-3">
+        {label}
+      </th>
+      <td className={cn("py-0.5 text-title", quiet && "text-text-2")}>{level}</td>
+      <td className="py-0.5 text-text-3">NCLC {NCLC[level]}</td>
+    </tr>
+  );
+}
+
+/** Each skill: its level in its own column, then where it sits on A2–C1+ against the next level's line. */
+function Skills({ review, target }: { review: Review; target: Level | null }) {
+  const max = levelValue("C1+");
+  const at = (v: number) => `${(v / max) * 100}%`;
+  const goal = target ? levelValue(target) : null;
+  return (
+    <table className="w-full table-fixed border-collapse text-label tabular-nums">
+      <caption className="sr-only">Each skill’s level</caption>
+      <colgroup>
+        <col className="w-24" />
+        <col className="w-12" />
+        <col />
+      </colgroup>
+      <thead className="sr-only">
+        <tr>
+          <th scope="col">Skill</th>
+          <th scope="col">Level</th>
+          <th scope="col">On the scale</th>
+        </tr>
+      </thead>
+      <tbody>
+        {review.skills.map(({ skill, level }) => {
+          const v = level === "unclear" ? null : levelValue(level);
+          const below = v !== null && goal !== null && v < goal;
+          return (
+            <tr key={skill}>
+              <th scope="row" className="py-1 text-start font-normal text-text-2">
+                {SKILL_LABEL[skill]}
+              </th>
+              <td className={cn("py-1", v === null ? "text-text-3" : below ? "text-warn" : "text-text")}>
+                {level === "unclear" ? "—" : level}
+                {level === "unclear" && <span className="sr-only">not enough to judge</span>}
+              </td>
+              <td className="py-1" aria-hidden>
+                <span className="relative block h-1 rounded-full bg-sunken">
+                  {goal !== null && <span className="absolute -inset-y-1 w-px bg-text-3" style={{ left: at(goal) }} />}
+                  {v !== null && (
+                    <span
+                      className={cn("absolute top-1/2 size-2 -translate-1/2 rounded-full", below ? "bg-warn" : "bg-text")}
+                      style={{ left: at(v) }}
+                    />
+                  )}
+                </span>
+              </td>
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
+  );
+}
+
+/** This essay's changes, most important first, then what to keep; a row selects its words, which opens its card. */
+function Changes({ review, blocks }: { review: Review; blocks: Block[] }) {
+  const { editor, setActiveId, activeId } = useReviewContext();
+  const all = placed(review, blocks);
+  const changes = all.filter((it) => it.kind !== "keep");
+  const keeps = all.filter((it) => it.kind === "keep");
+  const left = changes.filter((it) => it.status === "open").length;
+  const next = nextLevel(review.level) ?? review.level;
+  const order = new Map(review.items.map((it, i) => [it.id, i]));
+  const byImportance = (a: ReviewItem, b: ReviewItem) => order.get(a.id)! - order.get(b.id)!;
+
+  return (
+    <section aria-label="Changes" className="grid gap-1.5">
+      <h3 className="text-label text-text-3 tabular-nums">
+        {changes.length === 0
+          ? `No changes to ${next}`
+          : left === 0
+            ? `All ${changes.length} changes done`
+            : `${left} of ${changes.length} changes to ${next}`}
+      </h3>
+      <ul className="-mx-2 grid">
+        {[...changes.sort(byImportance), ...keeps.sort(byImportance)].map((it) => {
+          const done = it.status === "done";
+          return (
+            <li key={it.id}>
+              <button
+                type="button"
+                disabled={done}
+                aria-current={activeId === it.id || undefined}
+                onClick={() => {
+                  editor.current?.select(it.blockId, it.start, it.end);
+                  setActiveId(it.id);
+                }}
+                className="flex min-h-8 w-full items-center gap-2.5 rounded-row px-2 text-start text-label transition-colors duration-150 ease-out not-disabled:hover:bg-sunken aria-current:bg-sunken focus-visible:outline-2 focus-visible:outline-focus-ring pointer-coarse:min-h-11"
+              >
+                <span className="flex w-3.5 shrink-0 justify-center">
+                  {done ? (
+                    <CheckIcon aria-hidden className="size-3.5 text-ok" />
+                  ) : (
+                    <span aria-hidden className={cn("size-2 rounded-full", KIND_DOT[it.kind])} />
+                  )}
+                </span>
+                <span
+                  className={cn(
+                    done ? "text-text-3 line-through decoration-border-strong" : it.kind === "keep" ? "text-text-2" : "text-text",
+                  )}
+                >
+                  <Rich text={it.title} />
+                  {done && <span className="sr-only">, done</span>}
+                </span>
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
+  );
+}
+
+/** What to work on across essays; ×N once a pattern has come up in more than one. */
+function Focus({ review }: { review: Review }) {
+  const count = useFocusCounts();
+  const next = nextLevel(review.level);
+  if (!review.focus.length) return null;
+  return (
+    <section aria-label="Across your essays" className="grid gap-2">
+      <h3 className="text-label text-text-3">{next ? `To reach ${next}, across your essays` : "Across your essays"}</h3>
+      <table className="w-full table-fixed border-collapse text-label tabular-nums">
+        <colgroup>
+          <col className="w-5" />
+          <col />
+          <col className="w-8" />
+        </colgroup>
+        <tbody>
+          {review.focus.map((f, i) => {
+            const n = count(f.title);
+            return (
+              <tr key={f.title} className="align-baseline">
+                <td className="py-1 text-text-3">{i + 1}</td>
+                <td className="py-1 text-text">
+                  {f.title}
+                  <span className="block text-text-3">
+                    <Rich text={f.detail} />
+                  </span>
+                </td>
+                <td className="py-1 text-end text-text-3">
+                  {n > 1 && (
+                    <>
+                      ×{n}
+                      <span className="sr-only"> essays</span>
+                    </>
+                  )}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </section>
+  );
+}
+
+/** What the review is really doing: the model reads first, then writes its items out one by one. */
+function Trace({ paragraphs, found }: { paragraphs: number; found: number }) {
   const reading = found === 0;
   return (
-    <ol aria-label="Review progress" className="flex h-9 flex-col justify-between">
+    <ol aria-label="Review progress" aria-live="polite" className="grid gap-1.5">
       <TraceStep state={reading ? "running" : "done"}>
         {reading ? "Reading" : "Read"} {paragraphs} {paragraphs === 1 ? "paragraph" : "paragraphs"}
       </TraceStep>
       <TraceStep state={reading ? "pending" : "running"}>
-        {reading ? "Marking mistakes" : `Found ${found} ${found === 1 ? "mistake" : "mistakes"}`}
+        {reading ? "Choosing changes" : `Found ${found} ${found === 1 ? "item" : "items"}`}
       </TraceStep>
     </ol>
   );
@@ -278,27 +649,70 @@ function TraceStep({ state, children }: { state: keyof typeof STEP_ICON; childre
   );
 }
 
-function Summary({ mistakes }: { mistakes: CorrectionMistake[] }) {
-  const count = (s: CorrectionMistake["status"]) => mistakes.filter((m) => m.status === s).length;
-  const open = count("open") + count("skipped");
+/** The AI marks French with *asterisks*; it's set in Literata italic. */
+function Rich({ text }: { text: string }) {
+  return text.split(/\*([^*]+)\*/g).map((part, i) =>
+    i % 2 ? (
+      <em key={i} lang="fr" className="font-serif text-text italic">
+        {part}
+      </em>
+    ) : (
+      part
+    ),
+  );
+}
 
-  if (mistakes.length === 0) {
-    return (
-      <div className="w-full rounded-card border bg-surface p-4">
-        <h2 className="text-title">No mistakes</h2>
-        <p className="mt-1.5 text-ui text-text-2">
-          Ink checks prepositions, agreement, conjugation and spelling.
-        </p>
-      </div>
-    );
-  }
-  if (open > 0) return null;
+// ---------- Layout ----------
+
+// The column beside the essay: from the text's right edge plus GAP to the
+// window's edge minus EDGE, at least NOTES_MIN wide (else the aside stacks
+// above the essay) and at most NOTES_MAX.
+const GAP = 32;
+const EDGE = 16;
+const NOTES_MIN = 200;
+const NOTES_MAX = 288;
+
+/** In the column: absolute, the layout's full height, so its content can stick while the essay scrolls. */
+const ASIDE =
+  "mb-7 group-data-[layout=margin]/review:absolute group-data-[layout=margin]/review:inset-y-0 group-data-[layout=margin]/review:left-(--aside-left) group-data-[layout=margin]/review:mb-0 group-data-[layout=margin]/review:w-(--aside-width)";
+
+/**
+ * The essay's column with room for the aside. Measures where the text ends
+ * and writes the column's place as CSS variables, so placing it never
+ * re-renders anything; the essay never moves for it.
+ */
+function Layout({ children }: { children: React.ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null);
+
+  useLayoutEffect(() => {
+    const root = ref.current;
+    if (!root) return;
+    const place = () => {
+      const text = root.querySelector<HTMLElement>("[data-slot=review-marks]");
+      const box = root.getBoundingClientRect();
+      const right = text ? text.getBoundingClientRect().right : box.right;
+      const room = document.documentElement.clientWidth - right - GAP - EDGE;
+      if (room < NOTES_MIN) {
+        root.dataset.layout = "stacked";
+        return;
+      }
+      root.dataset.layout = "margin";
+      root.style.setProperty("--aside-left", `${right - box.left + GAP}px`);
+      root.style.setProperty("--aside-width", `${Math.min(room, NOTES_MAX)}px`);
+    };
+    place();
+    const observer = new ResizeObserver(place);
+    observer.observe(root);
+    window.addEventListener("resize", place);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", place);
+    };
+  });
+
   return (
-    <div className="w-full rounded-card border bg-surface p-4">
-      <h2 className="text-title">All {mistakes.length} done</h2>
-      <p className="mt-1.5 text-ui text-text-2 tabular-nums">
-        {count("fixed")} fixed by you · {count("revealed")} {count("revealed") === 1 ? "answer" : "answers"} shown
-      </p>
+    <div ref={ref} data-slot="review-layout" data-layout="stacked" className="group/review relative">
+      {children}
     </div>
   );
 }

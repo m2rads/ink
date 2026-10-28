@@ -2,7 +2,7 @@
 
 import { z } from "zod";
 
-import { checkEssay, judgeFix, type EssayCheck, type FixVerdict } from "@/lib/ai/check";
+import { judgeItem, runReview, type ItemVerdict, type ReviewResult } from "@/lib/ai/check";
 import { matchesAccepted } from "@/lib/ai/correction";
 import { lookUpVerb, type VerbLookup } from "@/lib/conjugation";
 import { AVOIR, ÊTRE } from "@/lib/conjugation/auxiliaries";
@@ -11,36 +11,41 @@ import { checkGrammar, type GrammarIssue } from "@/lib/grammar";
 import { LANGUAGE_CODES } from "@/lib/languages";
 import { translate } from "@/lib/translate";
 
-// The correction loop's two server functions, the essay's grammar
-// underlines, and the dictionary's lookup.
+// The review's two server functions, the essay's grammar underlines, and
+// the dictionary's lookup.
 // They're public POST endpoints, so input is validated and capped here;
 // there's no account to check yet.
 // TODO: rate-limit per visitor before Ink is public, or anyone can spend the
 // AI Gateway and Google Translate budgets.
 
-const essaySchema = z.object({
+const reviewSchema = z.object({
   reviewId: z.string().min(1).max(100),
   prompt: z.string().max(2_000),
   paragraphs: z.array(z.string().max(5_000)).min(1).max(60),
+  review: z.array(z.number().int().min(0).max(59)).max(60).optional(),
+  shown: z.array(z.tuple([z.number().int().min(0).max(59), z.string().max(200)])).max(60).optional(),
+  earlier: z.array(z.tuple([z.string().max(60), z.number().int().min(1).max(10_000)])).max(12).optional(),
 });
 
-export type ReviewEvent = { type: "found"; count: number } | { type: "done"; check: EssayCheck };
+export type ReviewEvent = { type: "found"; count: number } | { type: "done"; result: ReviewResult };
 
 /**
- * Review an essay, streamed: a `found` event each time the count of mistakes
- * so far goes up, then `done` with the result. Empty paragraphs are kept so
- * block indices still match the editor's.
+ * Review an essay, streamed: a `found` event each time the count of items so
+ * far goes up, then `done` with the result. `review` limits items to those
+ * paragraphs (an incremental review); the level always covers the whole
+ * essay. Empty paragraphs are kept so block indices match the editor's.
  */
-export async function reviewEssay(input: z.input<typeof essaySchema>): Promise<ReadableStream<ReviewEvent>> {
-  const essay = essaySchema.parse(input);
+export async function reviewEssay(input: z.input<typeof reviewSchema>): Promise<ReadableStream<ReviewEvent>> {
+  const essay = reviewSchema.parse(input);
   return new ReadableStream({
     async start(events) {
       try {
         const underlined = essay.paragraphs.map(checkGrammar);
-        const check = essay.paragraphs.every((p) => p.trim() === "")
-          ? { arm: "none", model: "none", mistakes: [] }
-          : await checkEssay({ ...essay, underlined }, { onFound: (count) => events.enqueue({ type: "found", count }) });
-        events.enqueue({ type: "done", check });
+        const result = await runReview(
+          { ...essay, underlined },
+          { onFound: (count) => events.enqueue({ type: "found", count }) },
+        );
+        events.enqueue({ type: "done", result });
         events.close();
       } catch (error) {
         events.error(error);
@@ -60,20 +65,22 @@ export async function findGrammar(paragraphs: string[]): Promise<GrammarIssue[][
   return grammarSchema.parse(paragraphs).map(checkGrammar);
 }
 
-const fixSchema = z.object({
+const itemCheckSchema = z.object({
   reviewId: z.string().min(1).max(100),
-  sentence: z.string().max(2_000),
-  wrong: z.string().max(500),
-  attempt: z.string().max(500),
-  rule: z.string().max(200),
+  passage: z.string().max(5_000),
+  quote: z.string().max(500),
+  title: z.string().max(200),
+  why: z.string().max(1_000),
+  /** The item's words now, and the answers that pass without a model call. */
+  words: z.string().max(500),
   accept: z.array(z.string().max(500)).max(20),
 });
 
-/** Re-check one rewrite: an accepted answer passes without a model call. */
-export async function checkFix(input: z.input<typeof fixSchema>): Promise<FixVerdict> {
-  const { accept, ...fix } = fixSchema.parse(input);
-  if (matchesAccepted(fix.attempt, accept)) return { correct: true, feedback: "", arm: "accepted", model: "none" };
-  return judgeFix(fix);
+/** Ask the AI about one item again, after the writer changed it. An accepted answer passes without a call. */
+export async function checkItem(input: z.input<typeof itemCheckSchema>): Promise<ItemVerdict> {
+  const { words, accept, ...item } = itemCheckSchema.parse(input);
+  if (accept.length && matchesAccepted(words, accept)) return { resolved: true, feedback: "", arm: "accepted", model: "none" };
+  return judgeItem(item);
 }
 
 const lookupSchema = z.object({

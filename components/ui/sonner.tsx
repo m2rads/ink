@@ -39,6 +39,9 @@ const Toaster = ({ ...props }: ToasterProps) => {
       toastOptions={{
         classNames: {
           toast: "cn-toast shadow-overlay!",
+          // An action is text, like the card actions: no filled button in a toast.
+          actionButton:
+            "bg-transparent! px-1! text-label! font-medium! text-text-2! transition-colors duration-150 ease-out hover:text-text! focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring",
         },
       }}
       {...props}

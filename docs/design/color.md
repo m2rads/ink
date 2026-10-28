@@ -37,12 +37,12 @@ Elevated surfaces (popovers, menus, dialogs) get their edge from their shadow; n
 
 | Token | Use | Never |
 | --- | --- | --- |
-| `ok` | Accepted fix, success, progress done | Decoration |
-| `warn` | Wrong fix, invalid input, destructive buttons | Success, info |
-| `c-prep`, `c-accord`, `c-conj`, `c-ortho` | Mistake categories: Prepositions, Agreement, Conjugation, Spelling | Anything that isn't a category |
-| `brand` | The logo mark; the one `brand` button per page | Links, focus, selection, hover, the writing and correction screens |
+| `ok` | Accepted fix, success, progress done, the review's strengths (keep) | Decoration |
+| `warn` | Wrong fix, invalid input, destructive buttons, the review's fixes and skills below the next level, grammar underlines | Success, info |
+| `c-prep` | The review's wording items (better). `c-accord`, `c-conj`, `c-ortho` are unused since the review dropped its four categories (2026-10-27); keep them until something needs them | Anything else |
+| `brand` | The logo mark; the one `brand` button per page | Links, focus, selection, hover, the writing screen |
 
-Category and status colors pass as 12px text on `bg-surface`. As backgrounds, use them only as tints, nothing stronger than `/24`, so all four categories stay equally loud. Margin's marks rest quiet (`bg-c-prep/8`, underline at `/60`), go to `/14` on hover, and to `/24` with a full-color underline when focused or being fixed: that tint is their focus indicator, with no ring. Pair every category color with its name or number; color alone doesn't identify it.
+Category and status colors pass as 12px text on `bg-surface`. As backgrounds, use them only as tints, nothing stronger than `/24`. The review's underlines rest at `/70` (`/60` for keep) with no tint, and the open item's words get a `/12` tint with a full-color underline: that tint is its focus indicator, with no ring. Pair every color with words or a shape (a dot, a check), never color alone.
 
 There is no blue "info" color and no red separate from `warn`. If you need one, ask; don't borrow `brand` or a category color.
 

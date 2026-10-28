@@ -31,3 +31,5 @@ Placeholder blocks for content loading longer than 400ms, matching the final lay
 ## Separator
 
 `<Separator />` (horizontal) between groups; `orientation="vertical"` between inline meta ("214 words | 31:08"), inside a container with a set height (it stretches to it). Given its own height in a taller row instead, add `data-vertical:self-center`, or it sticks to the top. For lines between list rows, use `border-b` on the rows instead.
+
+A toast's action (Retry, Review again) is text, not a filled button: `components/ui/sonner.tsx` styles every action as `text-label` `text-text-2`, `hover:text-text`, on no background. Don't restyle it per toast.

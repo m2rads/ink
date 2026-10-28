@@ -16,13 +16,13 @@ Variants: `default`, `outline`, `secondary`, `ghost`, `link`, `destructive`, `br
 - `ghost`: low-emphasis actions that should almost disappear until hovered: "Cancel" in a toolbar, icon-only toolbar buttons.
 - `link`: an action inside a sentence or a row of meta text. "See all notes". Underlined gray, never blue.
 - `destructive`: deletes data or abandons work. "Delete essay", "Leave" in the mock-run alert. Pair it with an AlertDialog ([overlays.md](overlays.md)).
-- `brand`: the one blue emphasis a page may have, such as the empty-state or onboarding CTA "Start mock run". It replaces the primary; a view never has both. Never in the writing or correction screens.
+- `brand`: the one blue emphasis a page may have, such as the empty-state or onboarding CTA "Start mock run". It replaces the primary; a view never has both. Never in the writing screen.
 
 ```
 Does it navigate to another page?
  └── Yes → <Link className={buttonVariants({ variant: … })}>
 Is it the one next step in this view?
- ├── Is this an empty state or onboarding, outside writing/correction? → variant="brand"
+ ├── Is this an empty state or onboarding, outside the writing screen? → variant="brand"
  └── Otherwise → no variant (primary)
 Does it delete or abandon something? → variant="destructive"
 Does it open a menu, popover, dialog, drawer or tooltip? → variant="outline"
@@ -53,7 +53,7 @@ Sizes: `default`, `xs`, `sm`, `lg`, `icon`, `icon-xs`, `icon-sm`, `icon-lg`. Not
 | --- | --- | --- |
 | `default` | 36px | Everywhere unless a row below applies. Matches Input height. |
 | `sm` | 32px | Inside cards, and in dense toolbars. |
-| `xs` | 28px | Inline next to 13–14px text, and the actions in a correction note (Check, Hint, Show answer, Skip). |
+| `xs` | 28px | Inline next to 13–14px text. Actions inside a card at the words (Answer, Check) are text, not buttons. |
 | `lg` | 40px | The single CTA of an empty state or onboarding step. |
 | `icon`, `icon-sm`, `icon-xs`, `icon-lg` | 36/32/28/40px circles | Icon-only buttons, matching the text size beside them. |
 

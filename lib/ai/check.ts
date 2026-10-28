@@ -2,109 +2,131 @@ import { generateText, Output, streamText, type LanguageModel } from "ai";
 import { z } from "zod";
 
 import { armFor, type Arm, type Task } from "./config";
-import { anchorMistakes, essayReportSchema, type Mistake, type ReportedMistake } from "./correction";
-import { CHECK_INSTRUCTIONS, FIX_INSTRUCTIONS } from "./instructions";
+import { ITEM_CHECK_INSTRUCTIONS, REVIEW_INSTRUCTIONS } from "./instructions";
 import { resolveModel } from "./models";
+import { anchorItems, reviewReportSchema, type Item, type ReportedItem, type ReviewReport } from "./review";
 
-// The two AI calls behind the correction loop. Server only: they read the
-// config and spend the AI Gateway key, or a provider's own key without one
-// (see models.ts). No temperature: reasoning models reject it.
+// The two AI calls behind the review. Server only: they read the config
+// and spend the AI Gateway key, or a provider's own key without one (see
+// models.ts). No temperature: reasoning models reject it.
 
-export type EssayInput = {
-  /** Assigns the A/B arm; the review's fix checks pass the same id. */
+export type ReviewInput = {
+  /** Assigns the A/B arm; the review's item checks pass the same id. */
   reviewId: string;
-  /** The prompt the essay answers, when there is one. */
+  /** The prompt the essay answers (the essay's title), when there is one. */
   prompt: string;
   paragraphs: string[];
+  /** 0-based paragraphs to give items for; the rest are context. All when absent. */
+  review?: number[];
+  /** Open items already shown in the other paragraphs, so they aren't repeated: [paragraph index, title]. */
+  shown?: [number, string][];
+  /** Focus titles from the writer's earlier essays, with how many essays each came up in. */
+  earlier?: [string, number][];
   /**
    * What the grammar checker already underlines in each paragraph (lib/grammar.ts).
-   * The model is told to leave it alone, and any mark overlapping it is dropped.
+   * The model is told to leave it alone, and any item overlapping it is dropped.
    */
   underlined?: { start: number; end: number; message: string }[][];
 };
 
-export type EssayCheck = { arm: string; model: string; mistakes: Mistake[] };
+export type ReviewResult = Omit<ReviewReport, "items"> & { arm: string; model: string; items: Item[] };
 
-export type CheckOptions = {
+export type ReviewOptions = {
   /** Replaces the configured arm (tests, evals). */
   model?: LanguageModel;
-  /** Called as the model writes its mistakes out, with how many are anchored so far. */
+  /** Called as the model writes its items out, with how many are anchored so far. */
   onFound?: (count: number) => void;
 };
 
 // Streamed so the review can show progress. A reasoning model thinks first
-// and then writes the mistakes out one by one; every mistake but the last in
-// a partial output is complete, so those are anchored and counted as they
-// arrive, and the count matches the final result's.
-export async function checkEssay(input: EssayInput, { model, onFound }: CheckOptions = {}): Promise<EssayCheck> {
+// and then writes the report out; every item but the last in a partial
+// output is complete, so those are anchored and counted as they arrive.
+export async function runReview(input: ReviewInput, { model, onFound }: ReviewOptions = {}): Promise<ReviewResult> {
+  const allowed = input.review ? new Set(input.review) : undefined;
+  const keep = (items: Item[]) => items.filter((m) => !underlinedAt(input, m));
   return run("check", input.reviewId, model, async (m, arm) => {
     const stream = streamText({
       model: m,
       reasoning: arm.reasoning,
-      instructions: CHECK_INSTRUCTIONS,
-      prompt: essayPrompt(input),
-      output: Output.object({ schema: essayReportSchema }),
-      abortSignal: AbortSignal.timeout(120_000),
+      instructions: REVIEW_INSTRUCTIONS,
+      prompt: reviewPrompt(input),
+      output: Output.object({ schema: reviewReportSchema }),
+      abortSignal: AbortSignal.timeout(150_000),
     });
     let found = 0;
     for await (const partial of stream.partialOutputStream) {
-      const complete = (partial.mistakes ?? []).slice(0, -1) as ReportedMistake[];
-      const count = anchorMistakes(input.paragraphs, complete).mistakes.filter((m) => !underlinedAt(input, m)).length;
+      const complete = (partial.items ?? []).slice(0, -1) as ReportedItem[];
+      const count = keep(anchorItems(input.paragraphs, complete, allowed).items).length;
       if (count > found) onFound?.((found = count));
     }
     const [output, usage] = await Promise.all([stream.output, stream.usage]);
-    const anchored = anchorMistakes(input.paragraphs, output.mistakes);
-    const mistakes = anchored.mistakes.filter((m) => !underlinedAt(input, m));
-    const repeated = anchored.mistakes.length - mistakes.length;
-    return { result: { mistakes }, log: { mistakes: mistakes.length, dropped: anchored.dropped.length, repeated, usage } };
+    const anchored = anchorItems(input.paragraphs, output.items, allowed);
+    const items = keep(anchored.items);
+    return {
+      result: { ...output, items },
+      log: {
+        level: output.level,
+        task: output.task,
+        items: items.length,
+        dropped: anchored.dropped.length,
+        repeated: anchored.items.length - items.length,
+        usage,
+      },
+    };
   });
 }
 
 // Empty paragraphs keep their number, so the model's paragraph numbers match
 // the editor's blocks.
-function essayPrompt({ prompt, paragraphs, underlined = [] }: EssayInput) {
-  const body = paragraphs.map((p, i) => `[${i + 1}] ${p}`).join("\n\n");
-  const essay = prompt.trim() ? `Exam prompt:\n${prompt.trim()}\n\nEssay:\n\n${body}` : `Essay:\n\n${body}`;
+function reviewPrompt({ prompt, paragraphs, review, shown = [], earlier = [], underlined = [] }: ReviewInput) {
+  const marked = review && review.length < paragraphs.filter((p) => p.trim()).length ? new Set(review) : null;
+  const body = paragraphs.map((p, i) => `[${i + 1}]${marked?.has(i) ? " (review)" : ""} ${p}`).join("\n\n");
+  const words = paragraphs.reduce((n, p) => n + p.split(/\s+/).filter(Boolean).length, 0);
+  const parts = [prompt.trim() ? `Exam prompt or title:\n${prompt.trim()}` : "", `Essay (${words} words):\n\n${body}`];
   const known = underlined.flatMap((issues, i) =>
     issues.map((u) => `[${i + 1}] "${paragraphs[i].slice(u.start, u.end)}": ${u.message}`),
   );
-  return known.length ? `${essay}\n\nAlready underlined:\n${known.join("\n")}` : essay;
+  if (known.length) parts.push(`Already underlined:\n${known.join("\n")}`);
+  if (marked && shown.length) parts.push(`Open items already shown:\n${shown.map(([i, t]) => `[${i + 1}] ${t}`).join("\n")}`);
+  if (earlier.length) parts.push(`Focus from earlier essays:\n${earlier.map(([t, n]) => `${t} (${n} ${n === 1 ? "essay" : "essays"})`).join("\n")}`);
+  return parts.filter(Boolean).join("\n\n");
 }
 
-/** Whether a mark falls on something the grammar checker already underlines. */
-function underlinedAt({ underlined = [] }: EssayInput, m: Mistake) {
+/** Whether an item falls on something the grammar checker already underlines. */
+function underlinedAt({ underlined = [] }: ReviewInput, m: Item) {
   return (underlined[m.block] ?? []).some((u) => m.start < u.end && u.start < m.end);
 }
 
-export type FixInput = {
+export type ItemCheckInput = {
   reviewId: string;
-  /** The sentence as the learner wrote it, mistake included. */
-  sentence: string;
-  wrong: string;
-  attempt: string;
-  rule: string;
+  /** The passage as it stands now: the sentence or paragraph the item is about. */
+  passage: string;
+  /** The words the item was about, as first written. */
+  quote: string;
+  title: string;
+  why: string;
 };
 
-const fixVerdictSchema = z.object({
-  correct: z.boolean(),
+const itemVerdictSchema = z.object({
+  resolved: z.boolean(),
   feedback: z
     .string()
-    .describe("Empty when correct. Otherwise a few words of English on what's still wrong, without the answer."),
+    .describe("Empty when resolved. Otherwise a few words of English on what's still missing, without the answer. French in *asterisks*."),
 });
 
-export type FixVerdict = z.infer<typeof fixVerdictSchema> & { arm: string; model: string };
+export type ItemVerdict = z.infer<typeof itemVerdictSchema> & { arm: string; model: string };
 
-export async function judgeFix(input: FixInput, model?: LanguageModel): Promise<FixVerdict> {
+export async function judgeItem(input: ItemCheckInput, model?: LanguageModel): Promise<ItemVerdict> {
   return run("fix", input.reviewId, model, async (m, arm) => {
     const { output, usage } = await generateText({
       model: m,
       reasoning: arm.reasoning,
-      instructions: FIX_INSTRUCTIONS,
-      prompt: `Sentence: ${input.sentence}\nMarked phrase: ${input.wrong}\nRule: ${input.rule}\nLearner's rewrite of the phrase: ${input.attempt}`,
-      output: Output.object({ schema: fixVerdictSchema }),
+      instructions: ITEM_CHECK_INSTRUCTIONS,
+      prompt: `Coach's note: ${input.title}. ${input.why}\nThe words it was about: ${input.quote}\nThe passage now: ${input.passage}`,
+      output: Output.object({ schema: itemVerdictSchema }),
       abortSignal: AbortSignal.timeout(30_000),
     });
-    return { result: output, log: { correct: output.correct, usage } };
+    return { result: output, log: { resolved: output.resolved, usage } };
   });
 }
 

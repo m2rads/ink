@@ -110,13 +110,16 @@ export function GrammarMarks({ text, issues, className }: { text: string; issues
 }
 
 const DWELL_MS = 250;
+/** The sticky app bar is 56px: a card that would sit under it goes below the words instead. */
+const ABOVE_THE_BAR = { top: 64, right: 8, bottom: 8, left: 8 };
 /** Time to cross from the words to the card before it closes. */
 const LEAVE_MS = 200;
 
 /**
  * The explanation of the underline under the pointer, or the one the caret
  * is inside (strictly: a caret at a word's end, where typing leaves it, shows
- * nothing), in a small card that stays open while the pointer is on it.
+ * nothing), in a small card above the words (below when there's no room)
+ * that stays open while the pointer is on it.
  * "Answer" puts Grammalecte's corrections under the explanation; the
  * writer still types the fix. Nothing in it takes focus, so the caret stays
  * in the essay. Typing hides it until the caret moves again. `root` is the
@@ -208,8 +211,10 @@ export function GrammarTip({ root }: { root: string }) {
       <PopoverContent
         ref={card}
         anchor={anchor}
-        side="bottom"
+        // Above the words, below when there's no room above (the app bar counts).
+        side="top"
         sideOffset={6}
+        collisionPadding={ABOVE_THE_BAR}
         initialFocus={false}
         finalFocus={false}
         lang="fr"

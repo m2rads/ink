@@ -15,27 +15,27 @@ import { cn } from "@/lib/utils";
 
 import { countWords, type Block, type Caret } from "./blocks";
 import { caretX, isOnLastLine, offsetAtX } from "./caret";
-import { Correction, useCorrectionText } from "./correction";
 import { Dictionary } from "./dictionary";
 import { flushDraft, readDraft, removeDraft, useCaret, useDraft } from "./draft-store";
 import { EssayEditor, type EssayEditorHandle } from "./essay-editor";
 import { EssayTimer } from "./essay-timer";
 import { GrammarMarks, GrammarTip, useGrammar } from "./grammar";
 import { removeSampleRuns } from "./legacy-storage";
-import { EssayReview, ReviewAside, ReviewProgress, useReviewFlow, useReviewProgress } from "./review";
+import { EssayReview, ReviewAside, ReviewMarks, ReviewPending, useReviewFlow, useReviewText } from "./review";
 import { trackEdit } from "./review-store";
 
 // The user's own essay: a title (their prompt, or any name) and the text.
 // An empty title and body are the empty state. The app bar holds the timer
 // (essay-timer.tsx), coffee mode and Review; the word count sits at the
-// bottom left. There's one view: a review adds its marks and notes to the
-// essay, which stays editable, and fixes are typed into it.
+// bottom left. There's one view: a review adds its underlines to the essay,
+// which stays editable, and everything else it says to the column on the
+// right; fixes are typed into the essay.
 //
 // The essay saves itself as it's written. ⌘S / Ctrl+S saves it at once
 // (the browser's "Save page" never opens here) and says so in a toast.
 //
-// Coffee mode leaves only the writing and its word count: the app bar and
-// the review's marks and notes fade out, with nothing moving. Its own button
+// Coffee mode leaves only the writing and its word count: the app bar, the
+// underlines and the review's column fade out, with nothing moving. Its own button
 // stays where it was, to bring them back. The dictionary stays (the writer
 // can hide it) but drops its recent words, and the timer keeps running.
 //
@@ -93,7 +93,6 @@ export function EssayScreen({
   const flow = useReviewFlow(id, essay?.title ?? "");
   // Where the writer left the caret, to put it back when the essay reopens.
   const [caret, setCaret] = useCaret(id);
-  const progress = useReviewProgress(flow, blocks);
   const editor = useRef<EssayEditorHandle>(null);
   const [coffee, setCoffee] = useState(false);
   // Words in the selection, while the essay has one.
@@ -179,12 +178,7 @@ export function EssayScreen({
           {/* Outside the fade: coffee mode keeps the timer's line (EssayTimer's quiet). */}
           <EssayTimer quiet={coffee} />
           <div className={cn("flex items-center gap-3", fade)}>
-            {progress && (
-              <span className="flex h-4 items-center gap-3 text-label text-text-3">
-                <ReviewProgress {...progress} />
-              </span>
-            )}
-            <Button variant="outline" size="sm" onClick={flow.run} disabled={words === 0 || checking}>
+            <Button variant="outline" size="sm" onClick={() => flow.run()} disabled={words === 0 || checking}>
               {checking ? "Reviewing…" : "Review"}
             </Button>
           </div>
@@ -193,13 +187,13 @@ export function EssayScreen({
 
       <main className="relative mx-auto w-full max-w-3xl px-4 sm:px-10">
         <Dictionary.Margin />
-        <EssayReview draftId={id} flow={flow} blocks={blocks} onBlocksChange={onBodyChange} editor={editor}>
+        <EssayReview draftId={id} flow={flow} blocks={blocks} editor={editor}>
           <TitleField
             value={title}
             autoFocus={isNew}
             onChange={(next) => record({ title: next, words })}
           />
-          {!coffee && <ReviewAside flow={flow} blocks={blocks} />}
+          {!coffee && <ReviewAside />}
           <EssayBody
             review={!coffee}
             onSelectedText={(text) => setSelected(text.trim() ? countWords([{ id: "", text }]) : 0)}
@@ -230,13 +224,13 @@ export function EssayScreen({
 const NO_BLOCKS: Block[] = [];
 
 /**
- * The editor with Grammalecte's underlines and the review's marks under each
- * paragraph, and the review's notes beside it; `review` off (coffee mode)
- * leaves only the text. Grammalecte does the spelling too, so the browser's
- * own spellcheck stays off.
+ * The editor with the review's and Grammalecte's underlines under each
+ * paragraph, and a dot beside one the review hasn't seen; `review` off
+ * (coffee mode) leaves only the text. Grammalecte does the spelling too, so
+ * the browser's own spellcheck stays off.
  */
 function EssayBody({ review, ...props }: React.ComponentProps<typeof EssayEditor> & { review: boolean }) {
-  const text = useCorrectionText();
+  const text = useReviewText();
   const grammar = useGrammar(props.value ?? NO_BLOCKS, review);
   if (!review) return <EssayEditor {...props} spellCheck={false} />;
   return (
@@ -247,11 +241,11 @@ function EssayBody({ review, ...props }: React.ComponentProps<typeof EssayEditor
         spellCheck={false}
         renderUnderlay={(b) => (
           <>
-            <Correction.Marks blockId={b.id} text={b.text} />
+            <ReviewMarks block={b} />
             <GrammarMarks text={b.text} issues={grammar(b)} />
           </>
         )}
-        renderAfter={(b) => <Correction.Notes blockId={b.id} />}
+        renderAfter={(b) => <ReviewPending block={b} />}
       />
       <GrammarTip root={BODY_ID} />
     </>
