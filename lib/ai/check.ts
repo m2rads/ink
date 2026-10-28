@@ -2,11 +2,12 @@ import { generateText, Output, streamText, type LanguageModel } from "ai";
 import { z } from "zod";
 
 import { armFor, type Arm, type Task } from "./config";
-import { ITEM_CHECK_INSTRUCTIONS, REVIEW_INSTRUCTIONS } from "./instructions";
+import { askReportSchema, MAX_SUGGESTIONS, type AskReport } from "./ask";
+import { ASK_INSTRUCTIONS, ITEM_CHECK_INSTRUCTIONS, REVIEW_INSTRUCTIONS } from "./instructions";
 import { resolveModel } from "./models";
 import { anchorItems, reviewReportSchema, type Item, type ReportedItem, type ReviewReport } from "./review";
 
-// The two AI calls behind the review. Server only: they read the config
+// The AI calls behind the review and the slash command. Server only: they read the config
 // and spend the AI Gateway key, or a provider's own key without one (see
 // models.ts). No temperature: reasoning models reject it.
 
@@ -127,6 +128,32 @@ export async function judgeItem(input: ItemCheckInput, model?: LanguageModel): P
       abortSignal: AbortSignal.timeout(30_000),
     });
     return { result: output, log: { resolved: output.resolved, usage } };
+  });
+}
+
+export type AskInput = {
+  /** What the writer typed after "/". */
+  query: string;
+  /** The paragraph's text before and after the query, for fitting the French in. */
+  before: string;
+  after: string;
+};
+
+export type AskResult = AskReport & { arm: string; model: string };
+
+/** French to put in place of the slash command's query. Fast: no reasoning, a short answer. */
+export async function suggestFrench(input: AskInput, model?: LanguageModel): Promise<AskResult> {
+  return run("ask", crypto.randomUUID(), model, async (m, arm) => {
+    const { output, usage } = await generateText({
+      model: m,
+      reasoning: arm.reasoning,
+      instructions: ASK_INSTRUCTIONS,
+      prompt: `Sentence: ${input.before}[QUERY]${input.after}\nQuery: ${input.query}`,
+      output: Output.object({ schema: askReportSchema }),
+      abortSignal: AbortSignal.timeout(20_000),
+    });
+    const suggestions = output.suggestions.filter((s) => s.fr.trim()).slice(0, MAX_SUGGESTIONS);
+    return { result: { readAs: output.readAs, suggestions }, log: { suggestions: suggestions.length, usage } };
   });
 }
 

@@ -27,7 +27,8 @@ export default function WritePage({ searchParams }: PageProps<"/write">) {
 async function Run({ searchParams }: Pick<PageProps<"/write">, "searchParams">) {
   const params = await searchParams;
   if (typeof params.essay !== "string") redirect("/home");
-  return <EssayScreen id={params.essay} fresh={params.new === "1"} />;
+  // Keyed by essay: its state (editable, coffee mode, the open card) belongs to one essay.
+  return <EssayScreen key={params.essay} id={params.essay} fresh={params.new === "1"} />;
 }
 
 function EssaySkeleton() {

@@ -11,8 +11,10 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { essayTitle, flushEssays, hasWriting, isSaved, removeEssay, saveEssay, TITLE_MAX, useEssays } from "@/lib/essays";
+import type { GrammarIssue } from "@/lib/grammar";
 import { cn } from "@/lib/utils";
 
+import { Ask, AskLayer, useCommandRange } from "./ask";
 import { countWords, type Block, type Caret } from "./blocks";
 import { caretX, isOnLastLine, offsetAtX } from "./caret";
 import { Dictionary } from "./dictionary";
@@ -225,31 +227,44 @@ const NO_BLOCKS: Block[] = [];
 
 /**
  * The editor with the review's and Grammalecte's underlines under each
- * paragraph, and a dot beside one the review hasn't seen; `review` off
- * (coffee mode) leaves only the text. Grammalecte does the spelling too, so
- * the browser's own spellcheck stays off.
+ * paragraph, a dot beside one the review hasn't seen, and the slash command
+ * (ask.tsx); `review` off (coffee mode) leaves the text and the slash
+ * command. Grammalecte does the spelling, so the browser's own spellcheck
+ * stays off.
  */
 function EssayBody({ review, ...props }: React.ComponentProps<typeof EssayEditor> & { review: boolean }) {
   const text = useReviewText();
-  const grammar = useGrammar(props.value ?? NO_BLOCKS, review);
-  if (!review) return <EssayEditor {...props} spellCheck={false} />;
+  const blocks = props.value ?? NO_BLOCKS;
+  const grammar = useGrammar(blocks, review);
   return (
-    <>
+    <Ask root={BODY_ID} blocks={blocks} onChange={(next, caret) => props.onValueChange?.(next, caret)}>
       <EssayEditor
         {...props}
-        {...text}
+        {...(review ? text : {})}
         spellCheck={false}
         renderUnderlay={(b) => (
           <>
-            <ReviewMarks block={b} />
-            <GrammarMarks text={b.text} issues={grammar(b)} />
+            {review && (
+              <>
+                <ReviewMarks block={b} />
+                <Grammar block={b} issues={grammar(b)} />
+              </>
+            )}
+            <AskLayer block={b} />
           </>
         )}
-        renderAfter={(b) => <ReviewPending block={b} />}
+        renderAfter={review ? (b) => <ReviewPending block={b} /> : undefined}
       />
-      <GrammarTip root={BODY_ID} />
-    </>
+      {review && <GrammarTip root={BODY_ID} />}
+    </Ask>
   );
+}
+
+/** Grammalecte's underlines, except inside an open slash command: that's a query, not essay text. */
+function Grammar({ block, issues }: { block: Block; issues: GrammarIssue[] }) {
+  const command = useCommandRange(block.id);
+  const shown = command ? issues.filter((i) => i.end <= command.start || i.start >= command.end) : issues;
+  return <GrammarMarks text={block.text} issues={shown} />;
 }
 
 /** Arrows out of the essay's top: ↑ lands under the caret on the title's last line, ← at its end. */

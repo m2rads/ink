@@ -52,3 +52,13 @@ Two or three patterns, most important first, from this essay and the learner's e
 export const ITEM_CHECK_INSTRUCTIONS = `A learner of French revised their essay after a coach's note on part of it. Decide whether the passage as it stands now resolves that note.
 
 Accept any correct resolution, not only the expected one, and ignore apostrophe style or spacing. Judge only the point the note makes: don't reject it for an unrelated problem. If it isn't resolved, say in a few words of English what's still missing, without giving the answer.`;
+
+export const ASK_INSTRUCTIONS = `A learner of French is writing an essay for the TEF Canada or TCF Canada exam and typed a query in the middle of a sentence: an English word or phrase, a question ("how do you say…"), or French they aren't sure of. Give them the French to put in its place.
+
+- Always answer in French that fits where the query sits: agree it with the sentence around it (gender, number, articles, elision), and match the essay's register.
+- Best first. Offer three or four genuinely different options (a plainer one, a more precise or idiomatic one, a step up in register), not near-duplicates.
+- If the query is already correct French that fits, put it first and say so in its note.
+- Tag Formal or Spoken only when the register matters for the exam; mark spoken French that examiners would mark down.
+- Notes are one short English sentence: what it means if that's not obvious, why it fits, or how it differs. French in *asterisks*.
+- When the query is ambiguous or has a slip, read it the way the sentence suggests and say how in readAs; otherwise leave readAs empty.
+- If the query makes no sense, return no suggestions.`;

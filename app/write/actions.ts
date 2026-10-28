@@ -2,7 +2,7 @@
 
 import { z } from "zod";
 
-import { judgeItem, runReview, type ItemVerdict, type ReviewResult } from "@/lib/ai/check";
+import { judgeItem, runReview, suggestFrench, type AskResult, type ItemVerdict, type ReviewResult } from "@/lib/ai/check";
 import { matchesAccepted } from "@/lib/ai/correction";
 import { lookUpVerb, type VerbLookup } from "@/lib/conjugation";
 import { AVOIR, ÊTRE } from "@/lib/conjugation/auxiliaries";
@@ -11,8 +11,8 @@ import { checkGrammar, type GrammarIssue } from "@/lib/grammar";
 import { LANGUAGE_CODES } from "@/lib/languages";
 import { translate } from "@/lib/translate";
 
-// The review's two server functions, the essay's grammar underlines, and
-// the dictionary's lookup.
+// The review's two server functions, the slash command, the essay's
+// grammar underlines, and the dictionary's lookup.
 // They're public POST endpoints, so input is validated and capped here;
 // there's no account to check yet.
 // TODO: rate-limit per visitor before Ink is public, or anyone can spend the
@@ -81,6 +81,19 @@ export async function checkItem(input: z.input<typeof itemCheckSchema>): Promise
   const { words, accept, ...item } = itemCheckSchema.parse(input);
   if (accept.length && matchesAccepted(words, accept)) return { resolved: true, feedback: "", arm: "accepted", model: "none" };
   return judgeItem(item);
+}
+
+const askSchema = z.object({
+  query: z.string().trim().min(1).max(200),
+  before: z.string().max(600),
+  after: z.string().max(300),
+});
+
+/** The slash command: French for what the writer typed after "/", fitted to its sentence. */
+export async function askFrench(input: z.input<typeof askSchema>): Promise<AskResult> {
+  const { query, before, after } = askSchema.parse(input);
+  // The sentence it goes in is enough context; the rest of the essay isn't sent.
+  return suggestFrench({ query, before: before.slice(-300), after: after.slice(0, 150) });
 }
 
 const lookupSchema = z.object({

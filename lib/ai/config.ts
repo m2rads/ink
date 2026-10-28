@@ -15,13 +15,14 @@ import { z } from "zod";
 // {
 //   "check": [{ "id": "sol", "model": "openai/gpt-6-sol", "reasoning": "medium", "weight": 50 },
 //             { "id": "sonnet", "model": "anthropic/claude-sonnet-5.5", "reasoning": "medium", "weight": 50 }],
-//   "fix":   [{ "id": "sol-low", "model": "openai/gpt-6-sol", "reasoning": "low" }]
+//   "fix":   [{ "id": "sol-low", "model": "openai/gpt-6-sol", "reasoning": "low" }],
+//   "ask":   [{ "id": "sol-none", "model": "openai/gpt-6-sol", "reasoning": "none" }]
 // }
 //
 // Each review lands in one arm per task and stays there (see pickArm), so
 // every re-check of its fixes comes from the same arm.
 
-export type Task = "check" | "fix";
+export type Task = "check" | "fix" | "ask";
 
 const armSchema = z.object({
   /** Short, stable name for the arm; it's what results are logged and compared by. */
@@ -33,18 +34,25 @@ const armSchema = z.object({
   reasoning: z.enum(["none", "minimal", "low", "medium", "high", "xhigh", "max"]).optional(),
 });
 
+export type Arm = z.infer<typeof armSchema>;
+
+// The slash command's suggestions are waited on mid-sentence: no reasoning.
+const DEFAULT_ASK: Arm[] = [{ id: "sol-none", model: "openai/gpt-6-sol", reasoning: "none", weight: 1 }];
+
 const configSchema = z.object({
   check: z.array(armSchema).min(1),
   fix: z.array(armSchema).min(1),
+  // Optional, so configs written before it existed stay valid.
+  ask: z.array(armSchema).min(1).default(DEFAULT_ASK),
 });
 
-export type Arm = z.infer<typeof armSchema>;
 export type AiConfig = z.infer<typeof configSchema>;
 
 export const DEFAULT_CONFIG: AiConfig = {
   check: [{ id: "sol-medium", model: "openai/gpt-6-sol", reasoning: "medium", weight: 1 }],
   // A fix is one short judgment the learner waits on, so less reasoning.
   fix: [{ id: "sol-low", model: "openai/gpt-6-sol", reasoning: "low", weight: 1 }],
+  ask: DEFAULT_ASK,
 };
 
 export async function loadConfig(): Promise<AiConfig> {

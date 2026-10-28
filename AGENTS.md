@@ -50,6 +50,21 @@ The AI review was spending itself on mistakes a rule-based checker catches (agre
 - Rejected: **LanguageTool** (a Java server or a paid API, no better at French), **the browser's spellcheck** (non-words only, different on every browser), **an AI pass while writing** (cost per keystroke pause, and it's the review's job).
 - Next: the review as a coach, built on top of it (Review: the coach).
 
+### Ask: the slash command, Menu (decided 2026-10-27)
+
+Explored in a throwaway `/proto/ask` with four directions (Menu, Field, Ghost, Margin) on mocked answers; built as `app/write/ask.tsx`.
+
+- **The command:** "/" typed at the start of a word, then what the writer wants to say: English, a question, or French they're unsure of. A space right after the "/" makes it plain text ("et/ou", "1 / 2" never trigger it); so does the caret leaving it, or a line break. While open, the command wears a faint halo (`bg-sunken`, in the underlay) so it reads as a command, not text; Grammalecte's underlines stay out of it (it's a query, not essay text).
+- **The menu:** above the command's line, below when there's no room (DESIGN.md rule 10). Before asking it says "Search for translation in English or French". Enter asks; three or four French suggestions come back, best first, each with a one-line note and a Formal/Spoken tag only when the register matters for the exam, plus a "read as" line when the query had a slip. ↑/↓ choose, Enter or a click puts the French in place of the command, Escape closes and leaves what was typed. A bare "/" and Enter is just Enter. No key hints in the menu: the keys work without them.
+- **The hint:** an empty paragraph or an empty new line with the caret on it shows "Type / to ask how to say something in French" (with "/" as a key), drawn in the underlay. Not on an empty essay, where its own placeholder speaks. This is the one hint line in the essay, asked for by the user.
+- **The AI:** `askFrench` → `suggestFrench` (`lib/ai/check.ts`, schema in `lib/ai/ask.ts`, prompt `ASK_INSTRUCTIONS`), the `ask` task in `lib/ai/config.ts` (default GPT-6 Sol with no reasoning; optional in configs written before it). It gets the query and the sentence around it only, never the rest of the essay. A first real query took about 3.5s; the prototype assumed under 1s, so a smaller model is worth an A/B arm.
+- **Works in coffee mode too:** it's writing help, not review.
+- Unlike the review, this puts the AI's French into the essay: the writer chooses, but doesn't type it. Worth watching whether learners lean on it; the exam has no such help.
+- Rejected:
+  - **Field** (a field at the caret; "/" never reaches the essay; answers as you type): the query vanishing from the sentence loses its context, and asking on every pause costs a call per pause.
+  - **Ghost** (Enter swaps the query for the best suggestion in the text; Tab cycles): writes into the essay before the writer has chosen.
+  - **Margin** (suggestions in the space left of the essay): that's the dictionary's place, and the eye travels away from the sentence.
+
 ### Home (decided 2026-10-24)
 
 Explored in a throwaway `/proto/home` with four directions; the pick is a mix of two.
@@ -155,7 +170,8 @@ Vercel's AI SDK (v7: `instructions`, not `system`; structured output is `generat
 - `lib/ai/check.ts`: `runReview` (streamed; `onFound` gets the count of anchored items as the model writes them out, for the review trace; `review` limits items to some paragraphs), `judgeItem` (Check). Each call logs one JSON line (`ai.check` / `ai.fix`: arm, model, ms, level, task, items, dropped quotes, repeated underlines, tokens); that's what an A/B comparison is read from.
 - `lib/ai/review.ts`: client-safe. Levels and their NCLC ranges (`NCLC`, approximate: FEI's TCF scale joined to IRCC's table; the TEF has no official CEFR table), `nextLevel`, skills, item kinds, tasks, the model-facing schema (no `.optional()` or numeric bounds: OpenAI's strict mode rejects some), and `anchorItems` (the model quotes the writer's words; offsets are found here, a quote not in the text is dropped, never guessed, and at most six changes and two strengths are kept).
 - `lib/ai/correction.ts`: client-safe text helpers: `locate` (re-finds an item after edits by the words before it), `matchesAccepted` (a fix matching an accepted answer passes with no model call), `sentenceAround`.
-- `app/write/actions.ts`: the server functions the review calls. `reviewEssay` runs Grammalecte first, then returns a `ReadableStream` of `found` events then `done`; `checkItem` is Check. Public POST endpoints: validate and cap input there, and add rate limiting before launch.
+- `lib/ai/ask.ts` and `suggestFrench` in `check.ts`: the slash command's suggestions (Ask, above), logged as `ai.ask`.
+- `app/write/actions.ts`: the server functions the review and the slash command call. `reviewEssay` runs Grammalecte first, then returns a `ReadableStream` of `found` events then `done`; `checkItem` is Check. Public POST endpoints: validate and cap input there, and add rate limiting before launch.
 - `app/write/review-store.ts` (reviews and focus memory in localStorage, `trackEdit` moving items with every edit through `marks.ts`, `mergeReview` for incremental reviews), `review.tsx` (the flow, `EssayReview` with its layout and the item card, `ReviewAside`, `ReviewMarks`, `ReviewPending`, `useReviewText`).
 
 ## Design system
