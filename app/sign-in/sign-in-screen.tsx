@@ -2,7 +2,7 @@
 
 import { CircleAlertIcon } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { useEffect, useLayoutEffect, useState, useSyncExternalStore } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -33,6 +33,20 @@ export function SignInScreen({ google }: { google: boolean }) {
   const step = chosen ?? fromLink ?? { kind: "email" };
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Bumped on leaving, so the forms (and what was typed in them) start fresh.
+  const [visit, setVisit] = useState(0);
+
+  // Signing in or out hides this route rather than unmounting it. Coming
+  // back (after signing out, say) must not show the last email or code.
+  useLayoutEffect(
+    () => () => {
+      setStep(null);
+      setError(null);
+      setBusy(false);
+      setVisit((v) => v + 1);
+    },
+    [],
+  );
 
   // The code shouldn't stay in the address bar or the history.
   useEffect(() => {
@@ -42,6 +56,8 @@ export function SignInScreen({ google }: { google: boolean }) {
   // Already signed in (or just now): on to where the writer was going.
   useEffect(() => {
     if (!session) return;
+    // The link has done its job; signing out and back here shouldn't offer it again.
+    forgetFragment();
     let gone = false;
     void claimLocalData().finally(() => {
       if (!gone) router.replace(next);
@@ -87,7 +103,7 @@ export function SignInScreen({ google }: { google: boolean }) {
   }
 
   return (
-    <main className="mx-auto grid w-full max-w-sm gap-6 px-4 pt-24 pb-16">
+    <main key={visit} className="mx-auto grid w-full max-w-sm gap-6 px-4 pt-24 pb-16">
       {step.kind === "email" && (
         <>
           <h1 className="text-heading">Sign in or sign up</h1>
@@ -222,9 +238,13 @@ export function SignInScreen({ google }: { google: boolean }) {
 }
 
 // The email's link carries the email and code in its #fragment, which never
-// reaches a server. Read once: the page clears it from the address bar.
+// reaches a server. Read once: the page clears it from the address bar, and
+// forgets it once signed in.
 let fragment: string | null = null;
 const readFragment = () => (fragment ??= location.hash);
+const forgetFragment = () => {
+  fragment = "";
+};
 const noSubscribe = () => () => {};
 
 function useLinkFragment(): Step | null {

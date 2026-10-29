@@ -20,11 +20,14 @@ import { sendEmail } from "./email";
 // as `Authorization: Bearer` (the bearer plugin). Server only.
 //
 // BETTER_AUTH_SECRET signs sessions, BETTER_AUTH_URL is the app's own origin.
+// On Vercel, the deployment's own addresses (its *.vercel.app URL, and a
+// preview's branch URL) are trusted too, so sign-in works there.
 
 const CODE_MINUTES = 10;
 
 export const auth = betterAuth({
   appName: "Ink",
+  trustedOrigins: [process.env.VERCEL_URL, process.env.VERCEL_BRANCH_URL].filter(Boolean).map((host) => `https://${host}`),
   database: drizzleAdapter(db, {
     provider: "pg",
     schema: { ...schema, rateLimit: schema.authRateLimit },
