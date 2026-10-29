@@ -1,0 +1,16 @@
+# Postgres for local development: `bun db:up`, then `bun db:migrate`.
+# Production uses Neon; DATABASE_URL picks which.
+services:
+  db:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: ink
+      POSTGRES_PASSWORD: ink
+      POSTGRES_DB: ink
+    ports:
+      - "5433:5432"
+    volumes:
+      - ink-db:/var/lib/postgresql/data
+
+volumes:
+  ink-db:

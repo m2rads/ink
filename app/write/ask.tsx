@@ -6,9 +6,9 @@ import { Kbd } from "@/components/ui/kbd";
 import { Popover, PopoverContent } from "@/components/ui/popover";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { AskReport, Suggestion } from "@/lib/ai/ask";
+import { ApiError, askFrench } from "@/lib/api/client";
 import { cn } from "@/lib/utils";
 
-import { askFrench } from "./actions";
 import { insertText, type Block, type Caret } from "./blocks";
 import { caretTop, caretX, rangeRects } from "./caret";
 
@@ -25,7 +25,8 @@ import { caretTop, caretX, rangeRects } from "./caret";
 // the editor's underlay (AskLayer), so they follow the text.
 
 type Session = { el: HTMLTextAreaElement; blockId: string; start: number };
-type Status = "typing" | "loading" | "done" | "failed";
+/** `none-left`: this month's questions are used; `busy`: too many at once. */
+type Status = "typing" | "loading" | "done" | "failed" | "none-left" | "busy";
 
 type AskValue = {
   session: Session | null;
@@ -98,8 +99,10 @@ export function Ask({
       setActive(0);
       setStatus("done");
     } catch (error) {
-      console.error(error);
-      if (id === run.current) setStatus("failed");
+      if (id !== run.current) return;
+      const code = error instanceof ApiError ? error.code : null;
+      if (code !== "quota" && code !== "rate") console.error(error);
+      setStatus(code === "quota" ? "none-left" : code === "rate" ? "busy" : "failed");
     }
   }
 
@@ -321,6 +324,8 @@ function Results() {
   const { status, answer, active, setActive, pick } = useAskContext();
   if (status === "loading" && !answer) return <Loading />;
   if (status === "failed") return <Line>Couldn’t search. Press Enter to try again</Line>;
+  if (status === "none-left") return <Line>No questions left this month</Line>;
+  if (status === "busy") return <Line>Too many at once. Press Enter to try again</Line>;
   if (!answer) return <Line>Search for translation in English or French</Line>;
   if (answer.suggestions.length === 0) return <Line>No suggestions. Try saying it another way</Line>;
   // An answer for an older query stays, dimmed, until the new one arrives.

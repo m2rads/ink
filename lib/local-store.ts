@@ -8,6 +8,9 @@ import { useCallback, useSyncExternalStore } from "react";
 // hydration, with no mismatch and no effect to load it. Writes notify
 // subscribers at once and save after `saveDelayMs` (or when the page is
 // hidden); another tab's writes come in through the `storage` event.
+//
+// `onChange` hears this tab's own writes and removals (what sync pushes);
+// `apply` and `applyRemove` change a value without it (what sync pulls).
 
 type Options<T> = {
   prefix: string;
@@ -15,9 +18,11 @@ type Options<T> = {
   serialize: (value: T) => string;
   fallback: () => T;
   saveDelayMs: number;
+  /** A write or removal made in this tab: `next` is null when `id` was removed. */
+  onChange?: (id: string, prev: T | null, next: T | null) => void;
 };
 
-export function createLocalStore<T>({ prefix, parse, serialize, fallback, saveDelayMs }: Options<T>) {
+export function createLocalStore<T>({ prefix, parse, serialize, fallback, saveDelayMs, onChange }: Options<T>) {
   const cache = new Map<string, T>();
   const listeners = new Map<string, Set<() => void>>();
   const pending = new Map<string, ReturnType<typeof setTimeout>>();
@@ -40,6 +45,17 @@ export function createLocalStore<T>({ prefix, parse, serialize, fallback, saveDe
   }
 
   function write(id: string, value: T) {
+    const prev = has(id) ? read(id) : null;
+    apply(id, value);
+    onChange?.(id, prev, value);
+  }
+
+  /** Whether `id` has a value saved, as opposed to the fallback. */
+  function has(id: string) {
+    return cache.has(id) || safeGet(keyOf(id)) !== null;
+  }
+
+  function apply(id: string, value: T) {
     cache.set(id, value);
     listeners.get(id)?.forEach((l) => l());
     if (saveDelayMs === 0) {
@@ -76,6 +92,12 @@ export function createLocalStore<T>({ prefix, parse, serialize, fallback, saveDe
 
   /** Forget `id`: drop it from storage, and subscribers get the fallback. */
   function remove(id: string) {
+    const prev = has(id) ? read(id) : null;
+    applyRemove(id);
+    if (prev !== null) onChange?.(id, prev, null);
+  }
+
+  function applyRemove(id: string) {
     clearTimeout(pending.get(id));
     pending.delete(id);
     cache.delete(id);
@@ -103,7 +125,21 @@ export function createLocalStore<T>({ prefix, parse, serialize, fallback, saveDe
     persist(id);
   }
 
-  return { useValue, read, write, remove, flush };
+  /** Every id with a value saved in this browser. */
+  function ids(): string[] {
+    const found = new Set<string>([...cache.keys()]);
+    try {
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key?.startsWith(`${prefix}:`)) found.add(key.slice(prefix.length + 1));
+      }
+    } catch {
+      // Storage blocked: only what's in memory.
+    }
+    return [...found];
+  }
+
+  return { useValue, read, write, remove, flush, has, apply, applyRemove, ids };
 }
 
 function safeGet(key: string): string | null {

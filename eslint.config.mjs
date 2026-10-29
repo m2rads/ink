@@ -12,6 +12,10 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Grammalecte, downloaded on install (scripts/fetch-grammalecte.ts).
+    "vendor/**",
+    // Source data downloaded by scripts/build-*.ts.
+    ".cache/**",
   ]),
 ]);
 

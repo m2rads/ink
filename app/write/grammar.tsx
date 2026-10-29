@@ -6,7 +6,7 @@ import { Popover, PopoverContent } from "@/components/ui/popover";
 import type { GrammarIssue } from "@/lib/grammar";
 import { cn } from "@/lib/utils";
 
-import { findGrammar } from "./actions";
+import { findGrammar } from "@/lib/api/client";
 import type { Block } from "./blocks";
 import { diffText } from "./marks";
 

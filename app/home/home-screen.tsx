@@ -1,8 +1,10 @@
 "use client";
 
-import { PenLineIcon, SunMoonIcon } from "lucide-react";
+import { PenLineIcon, SunMoonIcon, UserRoundIcon } from "lucide-react";
 import Link from "next/link";
-import { useMemo, useSyncExternalStore } from "react";
+import { useRouter } from "next/navigation";
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { toast } from "sonner";
 
 import { AppSidebar } from "@/components/app-sidebar";
 import { TruncateWords } from "@/components/truncate-words";
@@ -11,16 +13,22 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuGroup,
+  DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Separator } from "@/components/ui/separator";
 import { SidebarInset, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { me } from "@/lib/api/client";
+import { useSession } from "@/lib/auth-client";
 import { essayHref, essayTitle, localDay, useEssays, useStartEssay, type EssayMeta } from "@/lib/essays";
+import type { Allowance } from "@/lib/plans";
+import { signOutAndClear } from "@/lib/sync/client";
 import { setTheme, useThemeChoice, type ThemeChoice } from "@/lib/theme";
 
 import { ContributionGraph, currentStreak, type Activity } from "./contribution-graph";
@@ -47,7 +55,10 @@ export function HomeScreen() {
           <SidebarTrigger className="-ml-1" />
           <Separator orientation="vertical" className="h-4 data-vertical:self-center" />
           <h1 className="text-label font-medium">Home</h1>
-          <ThemeMenu className="ml-auto -mr-1" />
+          <div className="ml-auto -mr-1 flex items-center gap-2">
+            <ThemeMenu />
+            <AccountMenu />
+          </div>
         </header>
 
         <main className="px-4 py-12 sm:px-10">
@@ -132,7 +143,7 @@ function Recent({ essays }: { essays: EssayMeta[] | null }) {
 
 // The theme is chosen rarely, so it lives here rather than in the writing
 // screens' bars, where chrome stays out of the essay's way.
-function ThemeMenu({ className }: { className?: string }) {
+function ThemeMenu() {
   const choice = useThemeChoice();
   return (
     <DropdownMenu>
@@ -140,7 +151,7 @@ function ThemeMenu({ className }: { className?: string }) {
         <TooltipTrigger
           render={
             <DropdownMenuTrigger
-              render={<Button variant="ghost" size="icon-sm" aria-label="Theme" className={className} />}
+              render={<Button variant="ghost" size="icon-sm" aria-label="Theme" />}
             />
           }
         >
@@ -160,6 +171,67 @@ function ThemeMenu({ className }: { className?: string }) {
       </DropdownMenuContent>
     </DropdownMenu>
   );
+}
+
+// Who's signed in, what's left of the plan, and Sign out. Next to the theme,
+// for the same reason: it's rarely needed, and the writing screens stay quiet.
+function AccountMenu() {
+  const router = useRouter();
+  const { data: session, isPending } = useSession();
+  const [allowance, setAllowance] = useState<Allowance | null>(null);
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    if (!open || !session) return;
+    let gone = false;
+    me()
+      .then((r) => !gone && setAllowance(r.allowance))
+      .catch(() => {});
+    return () => {
+      gone = true;
+    };
+  }, [open, session]);
+
+  // Holds the button's place while the session loads.
+  if (isPending || !session) return <span aria-hidden className="size-8" />;
+  return (
+    <DropdownMenu open={open} onOpenChange={setOpen}>
+      <Tooltip>
+        <TooltipTrigger
+          render={<DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" aria-label="Account" />} />}
+        >
+          <UserRoundIcon />
+        </TooltipTrigger>
+        <TooltipContent>Account</TooltipContent>
+      </Tooltip>
+      <DropdownMenuContent align="end" className="w-60">
+        <DropdownMenuGroup>
+          <DropdownMenuLabel>{session.user.email}</DropdownMenuLabel>
+          <p className="px-2 pb-1.5 text-caption text-text-3 tabular-nums">
+            {allowance ? reviewsLine(allowance) : " "}
+          </p>
+        </DropdownMenuGroup>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem
+          onClick={() =>
+            signOutAndClear()
+              .then(() => router.replace("/sign-in"))
+              .catch(() =>
+                toast.error("Couldn’t sign out", { description: "Some changes aren’t saved to your account yet. Try again online." }),
+              )
+          }
+        >
+          Sign out
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+function reviewsLine(a: Allowance) {
+  // Allowances reset at midnight UTC: the day it starts, not the evening before in the Americas.
+  const when = new Date(a.resetsAt).toLocaleDateString("en", { month: "short", day: "numeric", timeZone: "UTC" });
+  return `${plural(a.reviewsLeft, "review")} left until ${when}`;
 }
 
 // Today's local date. Read through a store so renders stay pure; the server

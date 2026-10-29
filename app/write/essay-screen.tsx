@@ -12,6 +12,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { essayTitle, flushEssays, hasWriting, isSaved, removeEssay, saveEssay, TITLE_MAX, useEssays } from "@/lib/essays";
 import type { GrammarIssue } from "@/lib/grammar";
+import { useSynced } from "@/lib/sync/client";
 import { cn } from "@/lib/utils";
 
 import { Ask, AskLayer, useCommandRange } from "./ask";
@@ -99,15 +100,17 @@ export function EssayScreen({
   const [coffee, setCoffee] = useState(false);
   // Words in the selection, while the essay has one.
   const [selected, setSelected] = useState(0);
+  const synced = useSynced();
 
   if (essays === null || blocks === null) return <ScreenSkeleton />;
 
   if (!essay && !editable) {
+    // It may be on its way from another device.
+    if (!synced) return <ScreenSkeleton />;
     return (
       <main className="mx-auto grid max-w-prose gap-2 px-4 pt-24 text-center">
-        <h1 className="text-title">Not on this device</h1>
+        <h1 className="text-title">Essay not found</h1>
         <p className="text-ui text-text-2">
-          Essays are saved in this browser for now.{" "}
           <Link href="/home" className="text-text underline decoration-border-strong underline-offset-4 hover:decoration-current">
             Home
           </Link>

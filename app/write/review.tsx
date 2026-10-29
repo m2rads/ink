@@ -7,9 +7,9 @@ import { toast } from "sonner";
 import { Popover, PopoverContent } from "@/components/ui/popover";
 import { sentenceAround } from "@/lib/ai/correction";
 import { levelValue, nextLevel, NCLC, SKILL_LABEL, TASK_LABEL, type Kind, type Level } from "@/lib/ai/review";
+import { ApiError, checkItem, reviewEssay } from "@/lib/api/client";
 import { cn } from "@/lib/utils";
 
-import { checkItem, reviewEssay } from "./actions";
 import type { Block } from "./blocks";
 import { readDraft } from "./draft-store";
 import type { EssayEditorHandle } from "./essay-editor";
@@ -101,12 +101,25 @@ export function useReviewFlow(draftId: string, prompt: string): ReviewFlow {
       if (!result) throw new Error("Review ended without a result");
       mergeReview(draftId, blocks, covered, result, id, readDraft(draftId));
     } catch (error) {
-      console.error(error);
-      toast.error("Review failed", {
-        id: `review-failed:${draftId}`,
-        description: "Your essay is unchanged.",
-        action: { label: "Retry", onClick: () => latest.current(again) },
-      });
+      const code = error instanceof ApiError ? error.code : null;
+      if (code === "quota") {
+        const when = (error as ApiError).resetsAt;
+        toast("No reviews left", {
+          id: `review-failed:${draftId}`,
+          description: when
+            ? `More on ${new Date(when).toLocaleDateString("en", { month: "short", day: "numeric", timeZone: "UTC" })}`
+            : undefined,
+        });
+      } else if (code === "rate") {
+        toast("Too many reviews at once", { id: `review-failed:${draftId}`, description: "Try again in a minute." });
+      } else {
+        console.error(error);
+        toast.error("Review failed", {
+          id: `review-failed:${draftId}`,
+          description: "Your essay is unchanged.",
+          action: { label: "Retry", onClick: () => latest.current(again) },
+        });
+      }
     } finally {
       setStatus("idle");
     }
@@ -368,8 +381,12 @@ function ItemAction({ item }: { item: ReviewItem }) {
             if (verdict.resolved) resolveItem(draftId, readDraft(draftId), item.id);
             else updateItem(draftId, item.id, { feedback: verdict.feedback });
           } catch (error) {
-            console.error(error);
-            toast.error("Check failed", { description: "Try again in a moment." });
+            if (error instanceof ApiError && error.code === "rate") {
+              toast("Too many checks at once", { description: "Try again in a minute." });
+            } else {
+              console.error(error);
+              toast.error("Check failed", { description: "Try again in a moment." });
+            }
           } finally {
             setChecking(false);
           }

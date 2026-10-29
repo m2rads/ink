@@ -1,11 +1,12 @@
 "use client";
 
 import { createLocalStore } from "@/lib/local-store";
+import { changed } from "@/lib/sync/registry";
 
 import { blocksFromText, type Block, type Caret } from "./blocks";
 
-// Drafts live in localStorage, one per essay (or per sample prompt and run), until essays are
-// saved to a server.
+// Drafts live in localStorage, one per essay, and sync sends them with the
+// essay's entry (lib/essays.ts) as one record. Carets stay on each device.
 
 type Stored = { version: 1; blocks: Block[]; savedAt: string };
 
@@ -15,6 +16,7 @@ const drafts = createLocalStore<Block[]>({
   serialize: (blocks) => JSON.stringify({ version: 1, blocks, savedAt: new Date().toISOString() } satisfies Stored),
   fallback: () => blocksFromText(""),
   saveDelayMs: 400,
+  onChange: (id) => changed("essay", id),
 });
 
 /** The saved draft, or `null` until the client has hydrated. */
@@ -25,6 +27,21 @@ export const readDraft = drafts.read;
 export const writeDraft = drafts.write;
 /** Save the draft now, not after its delay (⌘S). */
 export const flushDraft = drafts.flush;
+
+/** Put another device's text in place (or remove it, `null`) without sending it back: what sync pulls. */
+export function applyDraft(id: string, blocks: Block[] | null) {
+  if (blocks) drafts.apply(id, blocks);
+  else {
+    drafts.applyRemove(id);
+    carets.applyRemove(id);
+  }
+}
+
+/** Forget every draft and caret in this browser (signing out). */
+export function clearDrafts() {
+  for (const id of drafts.ids()) drafts.applyRemove(id);
+  for (const id of carets.ids()) carets.applyRemove(id);
+}
 
 /** A draft and the caret saved with it. */
 export function removeDraft(id: string) {

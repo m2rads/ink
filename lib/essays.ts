@@ -4,10 +4,11 @@ import { useRouter } from "next/navigation";
 import { useCallback } from "react";
 
 import { createLocalStore } from "@/lib/local-store";
+import { changed } from "@/lib/sync/registry";
 
-// The user's essays: one index of metadata in localStorage until there's a
-// server. Each essay's text lives separately in the draft store
-// (app/write/draft-store.ts), keyed by the essay's id.
+// The user's essays: one index of metadata in localStorage, kept in step
+// with the account by sync (lib/sync). Each essay's text lives separately in
+// the draft store (app/write/draft-store.ts), keyed by the essay's id.
 //
 // An essay is saved only once something is written in it. New essay opens a
 // blank editor without saving anything; the first character of title or text
@@ -33,6 +34,16 @@ const store = createLocalStore<EssayMeta[]>({
   serialize: (essays) => JSON.stringify({ version: 1, essays }),
   fallback: () => [],
   saveDelayMs: 300,
+  // Sync sends each essay whose entry was added, changed or removed.
+  onChange(_, prev, next) {
+    const before = new Map((prev ?? []).map((e) => [e.id, e]));
+    const after = new Map((next ?? []).map((e) => [e.id, e]));
+    for (const [id, e] of after) {
+      const old = before.get(id);
+      if (!old || old.title !== e.title || old.words !== e.words || old.updatedAt !== e.updatedAt) changed("essay", id);
+    }
+    for (const id of before.keys()) if (!after.has(id)) changed("essay", id);
+  },
 });
 
 /** Every essay, most recently edited first; `null` until the client has hydrated. */
@@ -85,6 +96,32 @@ export function hasWriting(e: Pick<EssayMeta, "title" | "words">) {
 
 export function isSaved(id: string) {
   return store.read(INDEX).some((e) => e.id === id);
+}
+
+/** Every saved essay, most recently edited first, outside React. */
+export function readEssays(): EssayMeta[] {
+  return store.read(INDEX);
+}
+
+/** The essay's entry, or null when it isn't saved. */
+export function readEssay(id: string): EssayMeta | null {
+  return store.read(INDEX).find((e) => e.id === id) ?? null;
+}
+
+/**
+ * Put an essay from another device in the list (or take it out, `null`)
+ * without sending it back: what sync pulls. The list stays most recently
+ * edited first.
+ */
+export function applyEssay(id: string, essay: EssayMeta | null) {
+  const rest = store.read(INDEX).filter((e) => e.id !== id);
+  const next = essay ? [...rest, essay].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)) : rest;
+  store.apply(INDEX, next);
+}
+
+/** Forget every essay in this browser (signing out). */
+export function clearEssays() {
+  store.applyRemove(INDEX);
 }
 
 /** Take an essay out of the list. Its text is the caller's to remove (draft store). */

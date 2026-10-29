@@ -6,13 +6,15 @@ import type { ReviewResult } from "@/lib/ai/check";
 import { contextBefore, matchesAccepted } from "@/lib/ai/correction";
 import type { Item, Level, Skill, Task } from "@/lib/ai/review";
 import { createLocalStore } from "@/lib/local-store";
+import { changed } from "@/lib/sync/registry";
 
 import type { Block, Caret } from "./blocks";
 import { remapMarks } from "./marks";
 
 // The latest review of each draft, and the memory of focus patterns across
-// essays. Both live in localStorage until there's a server, keyed by draft
-// id (the essay's id).
+// essays. Both live in localStorage, keyed by draft id (the essay's id), and
+// sync keeps them with the account: a record per review, and one per
+// essay's focus titles.
 //
 // One review per draft, built up incrementally: the first covers the whole
 // essay; after that, Review covers only paragraphs changed since they were
@@ -68,6 +70,7 @@ const reviews = createLocalStore<Stored>({
   serialize: (v) => JSON.stringify(v),
   fallback: () => ({ review: null }),
   saveDelayMs: 0,
+  onChange: (id) => changed("review", id),
 });
 
 const current = (stored: Stored | null) => (stored?.review?.version === 2 ? stored.review : null);
@@ -229,6 +232,12 @@ const memory = createLocalStore<Memory>({
   serialize: (v) => JSON.stringify(v),
   fallback: () => ({}),
   saveDelayMs: 0,
+  // Sync sends each essay's entry that was added, changed or removed.
+  onChange(_, prev, next) {
+    for (const id of new Set([...Object.keys(prev ?? {}), ...Object.keys(next ?? {})])) {
+      if (prev?.[id]?.at !== next?.[id]?.at) changed("memory", id);
+    }
+  },
 });
 
 /** Each essay counts once, from its latest review, so reviewing again doesn't inflate a pattern. */
@@ -263,6 +272,44 @@ function tally(all: Memory, except?: string): [string, number][] {
     }
   }
   return [...counts.values()].sort((a, b) => b[1] - a[1]);
+}
+
+// ---------- Sync (lib/sync/adapters.ts) ----------
+
+/** The review as sync sends it: null when there's none. */
+export function readStoredReview(draftId: string): Stored | null {
+  return reviews.has(draftId) && reviews.read(draftId).review ? reviews.read(draftId) : null;
+}
+
+/** Another device's review (or none, `null`), without sending it back. */
+export function applyStoredReview(draftId: string, stored: Stored | null) {
+  if (stored) reviews.apply(draftId, stored);
+  else reviews.applyRemove(draftId);
+}
+
+export function storedReviewIds(): string[] {
+  return reviews.ids().filter((id) => readStoredReview(id));
+}
+
+export function readMemoryEntry(draftId: string): Memory[string] | null {
+  return memory.read("all")[draftId] ?? null;
+}
+
+export function applyMemoryEntry(draftId: string, entry: Memory[string] | null) {
+  const rest = { ...memory.read("all") };
+  if (entry) rest[draftId] = entry;
+  else delete rest[draftId];
+  memory.apply("all", rest);
+}
+
+export function memoryIds(): string[] {
+  return Object.keys(memory.read("all"));
+}
+
+/** Forget every review and the memory across essays in this browser (signing out). */
+export function clearReviews() {
+  for (const id of reviews.ids()) reviews.applyRemove(id);
+  memory.applyRemove("all");
 }
 
 function parseJson<T>(raw: string | null, valid: (v: unknown) => v is T): T | null {

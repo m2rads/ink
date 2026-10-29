@@ -1,0 +1,75 @@
+import { z } from "zod";
+
+import type { AskResult, ItemVerdict, ReviewResult } from "@/lib/ai/check";
+import type { GrammarIssue } from "@/lib/grammar";
+import { LANGUAGE_CODES } from "@/lib/languages";
+import type { Lookup } from "@/lib/lookup";
+import type { Allowance } from "@/lib/plans";
+
+// What the API (lib/api/server.ts) takes and returns, version 1. The web app
+// (lib/api/client.ts) and the Mac app send the same requests; change a shape
+// in a way old clients can't read only under a new version. Client-safe:
+// type imports only from server modules.
+
+export const reviewInput = z.object({
+  reviewId: z.string().min(1).max(100),
+  prompt: z.string().max(2_000),
+  paragraphs: z.array(z.string().max(5_000)).min(1).max(60),
+  review: z.array(z.number().int().min(0).max(59)).max(60).optional(),
+  shown: z.array(z.tuple([z.number().int().min(0).max(59), z.string().max(200)])).max(60).optional(),
+  earlier: z.array(z.tuple([z.string().max(60), z.number().int().min(1).max(10_000)])).max(12).optional(),
+});
+
+/** A review streams as newline-delimited JSON: `found` each time the count of items goes up, then `done` or `error`. */
+export type ReviewEvent =
+  | { type: "found"; count: number }
+  | { type: "done"; result: ReviewResult }
+  | { type: "error"; message: string };
+
+export const grammarInput = z.object({ paragraphs: z.array(z.string().max(5_000)).max(60) });
+export type GrammarOutput = { issues: GrammarIssue[][] };
+
+export const itemCheckInput = z.object({
+  reviewId: z.string().min(1).max(100),
+  passage: z.string().max(5_000),
+  quote: z.string().max(500),
+  title: z.string().max(200),
+  why: z.string().max(1_000),
+  /** The item's words now, and the answers that pass without a model call. */
+  words: z.string().max(500),
+  accept: z.array(z.string().max(500)).max(20),
+});
+export type ItemCheckOutput = ItemVerdict;
+
+export const askInput = z.object({
+  query: z.string().trim().min(1).max(200),
+  before: z.string().max(600),
+  after: z.string().max(300),
+});
+export type AskOutput = AskResult;
+
+export const lookupInput = z.object({
+  text: z.string().trim().min(1).max(100),
+  /** The learner's language (LANGUAGES), the other side being French. */
+  lang: z.enum(LANGUAGE_CODES),
+  direction: z.enum(["to-fr", "from-fr"]),
+  /** A selection's words before it in the essay (wordsBefore in selection.ts); absent in the panel. */
+  before: z.string().max(100).optional(),
+});
+export type LookupOutput = Lookup;
+
+export type MeOutput = {
+  user: { id: string; email: string; name: string; image: string | null };
+  allowance: Allowance;
+};
+
+/**
+ * Errors are `{ error: { code, message } }`:
+ * - `sign-in` (401): this needs an account.
+ * - `quota` (402): none of this left on the plan until `resetsAt`.
+ * - `rate` (429): too many requests; try again after `retryAfter` seconds.
+ * - `invalid` (400): the request doesn't match its schema.
+ * - `failed` (500): something went wrong on the way.
+ */
+export type ApiErrorCode = "sign-in" | "quota" | "rate" | "invalid" | "failed";
+export type ApiErrorBody = { error: { code: ApiErrorCode; message: string; retryAfter?: number; resetsAt?: string } };

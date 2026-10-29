@@ -35,7 +35,7 @@ import { createLocalStore } from "@/lib/local-store";
 import { speakFrench, useCanSpeakFrench } from "@/lib/speech";
 import { cn } from "@/lib/utils";
 
-import { lookUp } from "./actions";
+import { lookUp } from "@/lib/api/client";
 import { SelectionVerb, VerbEntry } from "./conjugation";
 import { SELECTION_UI, selectionAnchor, useSelection, type Selected } from "./selection";
 
@@ -54,7 +54,7 @@ import { SELECTION_UI, selectionAnchor, useSelection, type Selected } from "./se
 //
 // The language is a Pair: [your language ▾] ⇄ Français, source on the left.
 // Lookups wait for a pause in typing, and each one is a single translation
-// from Google Translate (lookUp in actions.ts) until a dictionary source is
+// from Google Translate (lookUp in lib/lookup.ts) until a dictionary source is
 // licensed.
 //
 // Selecting French in the essay offers the same lookup in place (AGENTS.md,

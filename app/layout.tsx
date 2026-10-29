@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Inter, Literata } from "next/font/google";
+import { SyncProvider } from "@/components/sync-provider";
 import { Toaster } from "@/components/ui/sonner";
 import { THEME_SCRIPT } from "@/lib/theme-script";
 
@@ -42,6 +43,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       <body className="min-h-full flex flex-col">
         {children}
         <Toaster />
+        <SyncProvider />
       </body>
     </html>
   );
