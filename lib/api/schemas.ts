@@ -66,7 +66,7 @@ export const askInput = z.object({
 export type AskOutput = AskResult;
 
 export const lookupInput = z.object({
-  text: z.string().trim().min(1).max(100),
+  text: z.string().trim().min(1).max(200),
   /** The learner's language (LANGUAGES), the other side being French. */
   lang: z.enum(LANGUAGE_CODES),
   direction: z.enum(["to-fr", "from-fr"]),

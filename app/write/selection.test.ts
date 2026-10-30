@@ -30,9 +30,14 @@ describe("lookupTerm", () => {
     expect(lookupTerm(text, ...at("."))).toBeNull();
   });
 
-  test("more than a phrase (8 words) is no term", () => {
+  test("a whole sentence is a term", () => {
     const sentence = `${text} Ce temps peut être consacré à sa famille.`;
-    expect(lookupTerm(sentence, 0, sentence.length)).toBeNull();
+    expect(lookupTerm(sentence, 0, sentence.length)?.term).toBe(sentence.replace(/\.$/, ""));
+  });
+
+  test("more than 200 characters is no term", () => {
+    const long = "le temps du trajet ".repeat(11);
+    expect(lookupTerm(long, 0, long.length)).toBeNull();
   });
 
   test("line breaks become spaces", () => {

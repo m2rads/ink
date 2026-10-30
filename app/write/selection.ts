@@ -8,10 +8,9 @@ import { rangeRects } from "./caret";
 // its title), for the dictionary's selection lookup (AGENTS.md, Selection
 // lookup). A selection counts once it settles: at once on mouse up and
 // double-click, after a pause for Shift+arrows and touch handles. Only one
-// paragraph's textarea: a selection across paragraphs is the editor's <p>s,
-// and too long to look up anyway.
+// paragraph's textarea: a selection across paragraphs is the editor's <p>s.
 
-/** A selection worth looking up: a word or a short phrase. */
+/** A selection worth looking up: a word, a phrase or a sentence. */
 export type Selected = {
   /** The selected text, widened to whole words. */
   term: string;
@@ -24,8 +23,8 @@ export type Selected = {
   rects: { x: number; y: number; width: number; height: number }[];
 };
 
-const MAX_WORDS = 8;
-const MAX_CHARS = 80;
+/** The lookup's input cap (lookupInput); a long sentence still fits. */
+const MAX_CHARS = 200;
 const BEFORE_WORDS = 6;
 const BEFORE_CHARS = 100;
 const SETTLE_MS = 350;
@@ -34,7 +33,7 @@ const WORD = /[\p{L}\p{M}\p{N}'’-]/u;
 /**
  * The term to look up for `value` selected from `start` to `end`: trimmed of
  * spaces and punctuation, widened to whole words, and null when there's no
- * word or it's longer than a phrase.
+ * word or it's longer than the lookup takes.
  */
 export function lookupTerm(value: string, start: number, end: number): { term: string; start: number; end: number } | null {
   while (start < end && !WORD.test(value[start])) start++;
@@ -43,7 +42,7 @@ export function lookupTerm(value: string, start: number, end: number): { term: s
   while (start > 0 && WORD.test(value[start - 1])) start--;
   while (end < value.length && WORD.test(value[end])) end++;
   const term = value.slice(start, end).replace(/\s+/g, " ");
-  if (term.length > MAX_CHARS || term.split(" ").length > MAX_WORDS) return null;
+  if (term.length > MAX_CHARS) return null;
   return { term, start, end };
 }
 

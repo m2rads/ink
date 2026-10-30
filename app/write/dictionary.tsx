@@ -165,8 +165,7 @@ function DictionaryRoot({
   // appears), so asking for it shows the answer at once instead of a wait.
   const prefetchLang = settings?.lang;
   useEffect(() => {
-    // lookUp takes up to 100 characters; a longer selection fails when asked, as before.
-    if (selected && prefetchLang && selected.term.length <= 100)
+    if (selected && prefetchLang)
       void fetchAnswer(selected.term, prefetchLang, "from-fr", selected.before);
   }, [selected, prefetchLang]);
 
@@ -378,7 +377,7 @@ function Lookup({ className }: { className?: string }) {
           placeholder="Look up…"
           lang={toFrench ? lang.code : "fr"}
           dir="auto"
-          maxLength={100}
+          maxLength={200}
           autoComplete="off"
           spellCheck={false}
           autoCorrect="off"
