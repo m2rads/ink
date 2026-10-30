@@ -17,7 +17,8 @@ import { sendEmail } from "./email";
 // - Google, once GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET are set.
 //
 // The web app is signed in by a cookie; the Mac app sends the session token
-// as `Authorization: Bearer` (the bearer plugin). Server only.
+// it got through /connect/mac (lib/connect.ts) as `Authorization: Bearer`
+// (the bearer plugin). Server only.
 //
 // BETTER_AUTH_SECRET signs sessions, BETTER_AUTH_URL is the app's own origin.
 // On Vercel, the deployment's own addresses (its *.vercel.app URL, and a

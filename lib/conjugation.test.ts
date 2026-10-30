@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import { lookUpVerb, readForm, type VerbLookup } from "./conjugation";
 import { AVOIR, ÊTRE } from "./conjugation/auxiliaries";
-import { auxiliaries, conjugate, infinitive, plain, rows, withoutSubject } from "./conjugation/compose";
+import { auxiliaries, conjugate, infinitive, plain, rows, TENSES, verbView, withoutSubject } from "./conjugation/compose";
 import lefff from "./conjugation/lefff.json";
 import type { Verb } from "./conjugation/types";
 
@@ -360,6 +360,40 @@ describe("compose", () => {
     expect(table(verb("falloir"), "present")).toEqual(["", "", "il faut", "", "", ""]);
     expect(table(verb("falloir"), "passeCompose")).toEqual(["", "", "il a fallu", "", "", ""]);
     expect(table(verb("pleuvoir"), "present")).toEqual(["", "", "il pleut", "", "", "ils pleuvent"]);
+  });
+});
+
+describe("verbView: finished tables for the Mac app", () => {
+  test("every tense, as rows gives it", () => {
+    const v = verb("aller");
+    const view = verbView(v);
+    expect(Object.keys(view.tables)).toEqual(TENSES.map((t) => t.id));
+    expect(view.tables.passeCompose[0]).toEqual({
+      person: 0,
+      forms: [
+        [
+          { t: "je ", k: "pro" },
+          { t: "suis ", k: "aux" },
+          { t: "allé", k: "verb" },
+          { t: "(e)", k: "agree" },
+        ],
+      ],
+    });
+    expect(view.tables.imperatif.map((r) => r.person)).toEqual([1, 3, 4]);
+    expect(view.tables.participes.map((r) => r.label)).toEqual(["Présent", "Passé", "Composé"]);
+    for (const { id } of TENSES) expect(view.tables[id]).toEqual(rows(v, id));
+  });
+
+  test("the infinitive as written, and the auxiliaries", () => {
+    expect(verbView(verb("aller"))).toMatchObject({ infinitive: "aller", auxiliaries: ["être"] });
+    expect(verbView(verb("se lever"))).toMatchObject({ infinitive: "se lever", auxiliaries: ["être"] });
+    expect(verbView(verb("s'asseoir")).infinitive).toBe("s’asseoir");
+    expect(verbView(verb("passer")).auxiliaries).toEqual(["être", "avoir"]);
+  });
+
+  test("a verb with its tables, about 8 kB", () => {
+    const size = JSON.stringify({ ...lookUpVerb("aller"), view: verbView(verb("aller")) }).length;
+    expect(size).toBeLessThan(12_000);
   });
 });
 

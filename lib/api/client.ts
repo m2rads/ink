@@ -10,6 +10,7 @@ import {
   type AskOutput,
   type CheckoutOutput,
   type ConfirmOutput,
+  type ConnectMacOutput,
   type GrammarOutput,
   type ItemCheckOutput,
   type LookupOutput,
@@ -17,6 +18,7 @@ import {
   type ReviewEvent,
   type askInput,
   type checkoutInput,
+  type connectMacInput,
   type itemCheckInput,
   type lookupInput,
   type reviewInput,
@@ -68,6 +70,11 @@ export async function startCheckout(plan: z.input<typeof checkoutInput>["plan"])
 /** Back from checkout: the pass granted if it's paid, and the allowance now. */
 export function confirmCheckout(session: string): Promise<ConfirmOutput> {
   return post("/billing/confirm", { session });
+}
+
+/** A one-time code for the Mac app's callback, bound to its PKCE challenge. */
+export async function connectMac(input: z.input<typeof connectMacInput>): Promise<string> {
+  return (await post<ConnectMacOutput>("/connect/mac", input)).code;
 }
 
 /**

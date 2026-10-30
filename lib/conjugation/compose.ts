@@ -162,3 +162,19 @@ export function rows(v: Verb, id: TenseId): { person?: number; label?: string; f
 export const isCompound = (id: TenseId): id is CompoundTense => id in COMPOUND;
 
 export const plain = (segs: Segment[]) => segs.map((s) => s.t).join("");
+
+/** A verb's finished tables, for a view that doesn't compose them itself (the Mac app). */
+export type VerbView = {
+  infinitive: string;
+  auxiliaries: ("être" | "avoir")[];
+  tables: Record<TenseId, ReturnType<typeof rows>>;
+};
+
+/** Every tense's rows, as `rows` gives them, with the infinitive and auxiliaries. */
+export function verbView(v: Verb): VerbView {
+  return {
+    infinitive: infinitive(v),
+    auxiliaries: auxiliaries(v),
+    tables: Object.fromEntries(TENSES.map(({ id }) => [id, rows(v, id)])) as VerbView["tables"],
+  };
+}

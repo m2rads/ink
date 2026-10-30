@@ -6,6 +6,7 @@ import { judgeItem, runReview, suggestFrench } from "@/lib/ai/check";
 import { matchesAccepted } from "@/lib/ai/correction";
 import { auth, userFrom, type User } from "@/lib/auth";
 import { fulfill, handleEvent, NotYours, paymentsEnabled, readEvent, startCheckout } from "@/lib/billing";
+import { createConnectCode, redeemConnectCode } from "@/lib/connect";
 import { checkGrammar } from "@/lib/grammar";
 import { lookUp } from "@/lib/lookup";
 import { hit } from "@/lib/rate-limit";
@@ -17,6 +18,8 @@ import {
   askInput,
   checkoutInput,
   confirmInput,
+  connectMacInput,
+  connectTokenInput,
   grammarInput,
   itemCheckInput,
   lookupInput,
@@ -26,6 +29,8 @@ import {
   type AskOutput,
   type CheckoutOutput,
   type ConfirmOutput,
+  type ConnectMacOutput,
+  type ConnectTokenOutput,
   type GrammarOutput,
   type ItemCheckOutput,
   type LookupOutput,
@@ -62,6 +67,20 @@ app.post("/stripe/webhook", async (c) => {
   return c.json({ received: true });
 });
 
+// The Mac app trades a one-time code from /connect/mac and its PKCE verifier
+// for a session token (lib/connect.ts). It has no session yet, so this is
+// outside v1, limited by address instead.
+app.post("/connect/token", async (c) => {
+  const ip = c.req.header("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
+  const result = await hit(`ip:${ip}:connect-token`, 20, 60);
+  if (!result.ok) return fail(c, "rate", "Too many requests. Try again in a moment.", { retryAfter: result.retryAfter });
+  const input = await parse(c, connectTokenInput);
+  if (!input.ok) return input.response;
+  const signedIn = await redeemConnectCode(input.data.code, input.data.verifier, ip);
+  if (!signedIn) return fail(c, "invalid", "This sign-in link has expired. Try again from Encre.");
+  return c.json<ConnectTokenOutput>(signedIn);
+});
+
 const v1 = new Hono<Env>();
 
 v1.use(async (c, next) => {
@@ -87,6 +106,13 @@ v1.get("/me", async (c) => {
     allowance: await allowance(user.id),
     payments: paymentsEnabled(),
   });
+});
+
+// Connecting the Mac app: a one-time code for its callback, bound to its PKCE challenge.
+v1.post("/connect/mac", limit("connect", 10, 60), async (c) => {
+  const input = await parse(c, connectMacInput);
+  if (!input.ok) return input.response;
+  return c.json<ConnectMacOutput>({ code: await createConnectCode(c.get("user").id, input.data.challenge) });
 });
 
 // Buying a pass: Stripe's checkout page to go to, then, back from it, the

@@ -72,6 +72,8 @@ export const lookupInput = z.object({
   direction: z.enum(["to-fr", "from-fr"]),
   /** A selection's words before it in the essay (wordsBefore in selection.ts); absent in the panel. */
   before: z.string().max(100).optional(),
+  /** The Mac app: a verb also carries its finished tables (`verb.view`, verbView in compose.ts), so it never composes them itself. */
+  tables: z.boolean().optional(),
 });
 export type LookupOutput = Lookup;
 
@@ -89,6 +91,22 @@ export type CheckoutOutput = { url: string };
 
 export const confirmInput = z.object({ session: z.string().startsWith("cs_").max(255) });
 export type ConfirmOutput = { status: Fulfilled; allowance: Allowance };
+
+// Signing in the Mac app (AGENTS.md, Accounts and sync): the signed-in web
+// page asks for a one-time code bound to the app's PKCE challenge; the app
+// trades the code and its verifier for its own session token.
+/** The app's random state, and the base64url SHA-256 of its verifier (no padding). */
+export const connectMacInput = z.object({
+  state: z.string().regex(/^[\w-]{16,128}$/, "state must be 16–128 characters of A–Z, a–z, 0–9, _ or -."),
+  challenge: z.string().regex(/^[\w-]{43}$/, "challenge must be a base64url SHA-256."),
+});
+export type ConnectMacOutput = { code: string };
+
+export const connectTokenInput = z.object({
+  code: z.string().min(1).max(100),
+  verifier: z.string().regex(/^[\w.~-]{43,128}$/, "verifier must be 43–128 characters of A–Z, a–z, 0–9, ., _, ~ or -."),
+});
+export type ConnectTokenOutput = { token: string; user: MeOutput["user"] };
 
 /**
  * Errors are `{ error: { code, message } }`:
