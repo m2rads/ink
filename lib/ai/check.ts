@@ -19,6 +19,8 @@ export type ReviewInput = {
   paragraphs: string[];
   /** 0-based paragraphs to give items for; the rest are context. All when absent. */
   review?: number[];
+  /** Paragraphs left out of a long essay ("" in `paragraphs`), with their word counts (lib/ai/budget.ts). */
+  omitted?: [number, number][];
   /** Open items already shown in the other paragraphs, so they aren't repeated: [paragraph index, title]. */
   shown?: [number, string][];
   /** Focus titles from the writer's earlier essays, with how many essays each came up in. */
@@ -79,11 +81,21 @@ export async function runReview(input: ReviewInput, { model, onFound }: ReviewOp
 
 // Empty paragraphs keep their number, so the model's paragraph numbers match
 // the editor's blocks.
-function reviewPrompt({ prompt, paragraphs, review, shown = [], earlier = [], underlined = [] }: ReviewInput) {
-  const marked = review && review.length < paragraphs.filter((p) => p.trim()).length ? new Set(review) : null;
-  const body = paragraphs.map((p, i) => `[${i + 1}]${marked?.has(i) ? " (review)" : ""} ${p}`).join("\n\n");
-  const words = paragraphs.reduce((n, p) => n + p.split(/\s+/).filter(Boolean).length, 0);
-  const parts = [prompt.trim() ? `Exam prompt or title:\n${prompt.trim()}` : "", `Essay (${words} words):\n\n${body}`];
+// A long essay's paragraphs left out (lib/ai/budget.ts) are named by their
+// length, so the model knows the essay goes on and judges from what it has.
+function reviewPrompt({ prompt, paragraphs, review, omitted = [], shown = [], earlier = [], underlined = [] }: ReviewInput) {
+  const left = new Map(omitted);
+  const written = paragraphs.filter((p) => p.trim()).length + left.size;
+  const marked = review && review.length < written ? new Set(review) : null;
+  const body = paragraphs
+    .map((p, i) => (left.has(i) ? `[${i + 1}] (not sent: ${left.get(i)} words)` : `[${i + 1}]${marked?.has(i) ? " (review)" : ""} ${p}`))
+    .join("\n\n");
+  const sent = paragraphs.reduce((n, p) => n + p.split(/\s+/).filter(Boolean).length, 0);
+  const words = sent + omitted.reduce((n, [, w]) => n + w, 0);
+  const heading = left.size
+    ? `Essay (${words} words; ${sent} sent, the rest left out to keep this review short: judge the level from what's here, and say so in the caveat)`
+    : `Essay (${words} words)`;
+  const parts = [prompt.trim() ? `Exam prompt or title:\n${prompt.trim()}` : "", `${heading}:\n\n${body}`];
   const known = underlined.flatMap((issues, i) =>
     issues.map((u) => `[${i + 1}] "${paragraphs[i].slice(u.start, u.end)}": ${u.message}`),
   );

@@ -2,19 +2,24 @@ import type { z } from "zod";
 
 import { goToSignIn } from "@/lib/auth-client";
 
-import type {
-  ApiErrorBody,
-  ApiErrorCode,
-  AskOutput,
-  GrammarOutput,
-  ItemCheckOutput,
-  LookupOutput,
-  MeOutput,
-  ReviewEvent,
-  askInput,
-  itemCheckInput,
-  lookupInput,
-  reviewInput,
+import {
+  GRAMMAR_BATCH,
+  GRAMMAR_CHARS,
+  type ApiErrorBody,
+  type ApiErrorCode,
+  type AskOutput,
+  type CheckoutOutput,
+  type ConfirmOutput,
+  type GrammarOutput,
+  type ItemCheckOutput,
+  type LookupOutput,
+  type MeOutput,
+  type ReviewEvent,
+  type askInput,
+  type checkoutInput,
+  type itemCheckInput,
+  type lookupInput,
+  type reviewInput,
 } from "./schemas";
 
 // The web app's side of the API (lib/api/server.ts): the same requests the
@@ -55,9 +60,28 @@ export async function me(): Promise<MeOutput> {
   return (await request("/me")).json() as Promise<MeOutput>;
 }
 
-/** Grammalecte's mistakes in each paragraph, for the essay's underlines. */
+/** Stripe's checkout page for a pass. */
+export async function startCheckout(plan: z.input<typeof checkoutInput>["plan"]): Promise<string> {
+  return (await post<CheckoutOutput>("/billing/checkout", { plan })).url;
+}
+
+/** Back from checkout: the pass granted if it's paid, and the allowance now. */
+export function confirmCheckout(session: string): Promise<ConfirmOutput> {
+  return post("/billing/confirm", { session });
+}
+
+/**
+ * Grammalecte's mistakes in each paragraph, for the essay's underlines. In
+ * batches the API takes (GRAMMAR_BATCH paragraphs, each cut to
+ * GRAMMAR_CHARS: a longer one is underlined that far).
+ */
 export async function findGrammar(paragraphs: string[]): Promise<GrammarOutput["issues"]> {
-  return (await post<GrammarOutput>("/grammar", { paragraphs })).issues;
+  const batches: string[][] = [];
+  for (let i = 0; i < paragraphs.length; i += GRAMMAR_BATCH) {
+    batches.push(paragraphs.slice(i, i + GRAMMAR_BATCH).map((p) => p.slice(0, GRAMMAR_CHARS)));
+  }
+  const found = await Promise.all(batches.map((batch) => post<GrammarOutput>("/grammar", { paragraphs: batch })));
+  return found.flatMap((f) => f.issues);
 }
 
 export function lookUp(input: z.input<typeof lookupInput>): Promise<LookupOutput> {

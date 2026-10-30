@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { createContext, use, useEffect, useRef, useState } from "react";
 
 import { Kbd } from "@/components/ui/kbd";
@@ -25,7 +26,7 @@ import { caretTop, caretX, rangeRects } from "./caret";
 // the editor's underlay (AskLayer), so they follow the text.
 
 type Session = { el: HTMLTextAreaElement; blockId: string; start: number };
-/** `none-left`: this month's questions are used; `busy`: too many at once. */
+/** `none-left`: the plan's questions are used (a link to Plans); `busy`: too many at once. */
 type Status = "typing" | "loading" | "done" | "failed" | "none-left" | "busy";
 
 type AskValue = {
@@ -324,7 +325,15 @@ function Results() {
   const { status, answer, active, setActive, pick } = useAskContext();
   if (status === "loading" && !answer) return <Loading />;
   if (status === "failed") return <Line>Couldn’t search. Press Enter to try again</Line>;
-  if (status === "none-left") return <Line>No questions left this month</Line>;
+  if (status === "none-left")
+    return (
+      <Line>
+        No questions left ·{" "}
+        <Link href="/plans" className="text-text underline decoration-border-strong underline-offset-4 hover:decoration-current">
+          Get a pass
+        </Link>
+      </Line>
+    );
   if (status === "busy") return <Line>Too many at once. Press Enter to try again</Line>;
   if (!answer) return <Line>Search for translation in English or French</Line>;
   if (answer.suggestions.length === 0) return <Line>No suggestions. Try saying it another way</Line>;

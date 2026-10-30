@@ -40,12 +40,27 @@ async function used(q: Db | Tx, userId: string, task: Task, from: Date) {
   return row.n;
 }
 
+/** When the user's passes run out: a pass bought while another runs starts when it ends, so the last end. */
+async function passesEnd(userId: string, now = new Date()) {
+  const [last] = await db
+    .select({ endsAt: entitlement.endsAt })
+    .from(entitlement)
+    .where(and(eq(entitlement.userId, userId), isNull(entitlement.revokedAt), gt(entitlement.endsAt, now)))
+    .orderBy(desc(entitlement.endsAt))
+    .limit(1);
+  return last?.endsAt ?? null;
+}
+
 export async function allowance(userId: string): Promise<Allowance> {
   const p = await period(db, userId);
-  const [reviews, asks] = await Promise.all([used(db, userId, "review", p.from), used(db, userId, "ask", p.from)]);
+  const [reviews, asks, end] = await Promise.all([
+    used(db, userId, "review", p.from),
+    used(db, userId, "ask", p.from),
+    p.passEndsAt ? passesEnd(userId) : null,
+  ]);
   return {
     plan: p.plan.id,
-    passEndsAt: p.passEndsAt?.toISOString() ?? null,
+    passEndsAt: (end ?? p.passEndsAt)?.toISOString() ?? null,
     reviewsLeft: Math.max(0, p.plan.reviews - reviews),
     asksLeft: Math.max(0, p.plan.asks - asks),
     resetsAt: p.to.toISOString(),

@@ -1,10 +1,12 @@
 "use client";
 
 import { CheckIcon, CircleCheckIcon, CircleDashedIcon, LoaderCircleIcon } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { createContext, use, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { Popover, PopoverContent } from "@/components/ui/popover";
+import { planReview } from "@/lib/ai/budget";
 import { sentenceAround } from "@/lib/ai/correction";
 import { levelValue, nextLevel, NCLC, SKILL_LABEL, TASK_LABEL, type Kind, type Level } from "@/lib/ai/review";
 import { ApiError, checkItem, reviewEssay } from "@/lib/api/client";
@@ -52,6 +54,7 @@ export type ReviewFlow = {
 };
 
 export function useReviewFlow(draftId: string, prompt: string): ReviewFlow {
+  const router = useRouter();
   const review = useReview(draftId);
   const [status, setStatus] = useState<ReviewFlow["status"]>("idle");
   const [found, setFound] = useState(0);
@@ -59,12 +62,17 @@ export function useReviewFlow(draftId: string, prompt: string): ReviewFlow {
 
   // The toast outlives this render; Retry and Review again must use the text
   // as it is when pressed.
-  const latest = useRef<(again?: boolean) => void>(() => {});
+  const latest = useRef<(again?: boolean, rest?: string[]) => void>(() => {});
 
-  async function check(again: boolean) {
+  /** `rest`: the paragraphs a long review left for next time (by block id), reviewed even if unchanged. */
+  async function check(again: boolean, rest?: string[]) {
     const blocks = readDraft(draftId);
     const old = readReview(draftId);
-    const todo = again || !old ? blocks.filter((b) => b.text.trim()) : unreviewed(old, blocks);
+    const todo = rest
+      ? blocks.filter((b) => b.text.trim() && rest.includes(b.id))
+      : again || !old
+        ? blocks.filter((b) => b.text.trim())
+        : unreviewed(old, blocks);
     if (!todo.length) {
       toast("Nothing new to review", {
         id: `review-same:${draftId}`,
@@ -72,18 +80,25 @@ export function useReviewFlow(draftId: string, prompt: string): ReviewFlow {
       });
       return;
     }
-    const covered = new Set(todo.map((b) => b.id));
+    // A long essay is reviewed a part at a time (lib/ai/budget.ts); what's left keeps its dot.
+    const plan = planReview(
+      blocks.map((b) => b.text),
+      todo.map((t) => blocks.indexOf(t)),
+    );
+    const covered = new Set(plan.review.map((i) => blocks[i].id));
     setStatus("checking");
     setFound(0);
-    setCovering(todo.length);
+    setCovering(plan.review.length);
     toast.dismiss(`review-failed:${draftId}`);
+    toast.dismiss(`review-rest:${draftId}`);
     const id = crypto.randomUUID();
     try {
       const events = await reviewEssay({
         reviewId: id,
         prompt,
-        paragraphs: blocks.map((b) => b.text),
-        review: blocks.flatMap((b, i) => (covered.has(b.id) ? [i] : [])),
+        paragraphs: plan.paragraphs,
+        review: plan.review,
+        omitted: plan.omitted,
         shown: (old?.items ?? [])
           .filter((it) => it.status === "open" && !covered.has(it.blockId))
           .flatMap((it): [number, string][] => {
@@ -100,6 +115,15 @@ export function useReviewFlow(draftId: string, prompt: string): ReviewFlow {
       }
       if (!result) throw new Error("Review ended without a result");
       mergeReview(draftId, blocks, covered, result, id, readDraft(draftId));
+      if (plan.left) {
+        toast(`Reviewed ${plan.review.length} of ${todo.length} paragraphs`, {
+          id: `review-rest:${draftId}`,
+          action: {
+            label: "Review the rest",
+            onClick: () => latest.current(false, todo.flatMap((b) => (covered.has(b.id) ? [] : [b.id]))),
+          },
+        });
+      }
     } catch (error) {
       const code = error instanceof ApiError ? error.code : null;
       if (code === "quota") {
@@ -107,8 +131,9 @@ export function useReviewFlow(draftId: string, prompt: string): ReviewFlow {
         toast("No reviews left", {
           id: `review-failed:${draftId}`,
           description: when
-            ? `More on ${new Date(when).toLocaleDateString("en", { month: "short", day: "numeric", timeZone: "UTC" })}`
+            ? `More on ${new Date(when).toLocaleDateString("en", { month: "short", day: "numeric", ...(when.endsWith("T00:00:00.000Z") && { timeZone: "UTC" }) })}`
             : undefined,
+          action: { label: "Get a pass", onClick: () => router.push("/plans") },
         });
       } else if (code === "rate") {
         toast("Too many reviews at once", { id: `review-failed:${draftId}`, description: "Try again in a minute." });
@@ -117,7 +142,7 @@ export function useReviewFlow(draftId: string, prompt: string): ReviewFlow {
         toast.error("Review failed", {
           id: `review-failed:${draftId}`,
           description: "Your essay is unchanged.",
-          action: { label: "Retry", onClick: () => latest.current(again) },
+          action: { label: "Retry", onClick: () => latest.current(again, rest) },
         });
       }
     } finally {
@@ -126,7 +151,7 @@ export function useReviewFlow(draftId: string, prompt: string): ReviewFlow {
   }
 
   useEffect(() => {
-    latest.current = (again = false) => void check(again);
+    latest.current = (again = false, rest) => void check(again, rest);
   });
 
   return {

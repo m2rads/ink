@@ -212,6 +212,7 @@ function AccountMenu() {
           </p>
         </DropdownMenuGroup>
         <DropdownMenuSeparator />
+        <DropdownMenuItem render={<Link href="/plans" />}>Plans</DropdownMenuItem>
         <DropdownMenuItem
           onClick={() =>
             signOutAndClear()
@@ -229,9 +230,18 @@ function AccountMenu() {
 }
 
 function reviewsLine(a: Allowance) {
-  // Allowances reset at midnight UTC: the day it starts, not the evening before in the Americas.
-  const when = new Date(a.resetsAt).toLocaleDateString("en", { month: "short", day: "numeric", timeZone: "UTC" });
-  return `${plural(a.reviewsLeft, "review")} left until ${when}`;
+  // Reviews that last as long as the pass don't need their own date.
+  const until = a.resetsAt === a.passEndsAt ? "" : ` until ${turnover(a.resetsAt)}`;
+  const reviews = `${plural(a.reviewsLeft, "review")} left${until}`;
+  return a.passEndsAt ? `Exam Pass until ${turnover(a.passEndsAt)} · ${reviews}` : reviews;
+}
+
+// The free allowance turns over at midnight UTC: show that day, not the
+// evening before in the Americas. A pass ends at the time it was bought, so
+// that one is the writer's own day.
+function turnover(iso: string) {
+  const midnightUtc = iso.endsWith("T00:00:00.000Z");
+  return new Date(iso).toLocaleDateString("en", { month: "short", day: "numeric", ...(midnightUtc && { timeZone: "UTC" }) });
 }
 
 // Today's local date. Read through a store so renders stay pure; the server

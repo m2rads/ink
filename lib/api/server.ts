@@ -5,6 +5,7 @@ import type { z } from "zod";
 import { judgeItem, runReview, suggestFrench } from "@/lib/ai/check";
 import { matchesAccepted } from "@/lib/ai/correction";
 import { auth, userFrom, type User } from "@/lib/auth";
+import { fulfill, handleEvent, NotYours, paymentsEnabled, readEvent, startCheckout } from "@/lib/billing";
 import { checkGrammar } from "@/lib/grammar";
 import { lookUp } from "@/lib/lookup";
 import { hit } from "@/lib/rate-limit";
@@ -14,6 +15,8 @@ import { allowance, refund, settle, spend } from "@/lib/usage";
 
 import {
   askInput,
+  checkoutInput,
+  confirmInput,
   grammarInput,
   itemCheckInput,
   lookupInput,
@@ -21,6 +24,8 @@ import {
   type ApiErrorBody,
   type ApiErrorCode,
   type AskOutput,
+  type CheckoutOutput,
+  type ConfirmOutput,
   type GrammarOutput,
   type ItemCheckOutput,
   type LookupOutput,
@@ -42,6 +47,20 @@ const app = new Hono<Env>().basePath("/api");
 
 // Better Auth's own routes: sign-in, sign-out, the session.
 app.on(["GET", "POST"], "/auth/*", (c) => auth.handler(c.req.raw));
+
+// Stripe's events (lib/billing.ts): signed by Stripe, so no session. Any
+// answer but 2xx makes Stripe retry, for up to three days.
+app.post("/stripe/webhook", async (c) => {
+  let event;
+  try {
+    event = await readEvent(await c.req.text(), c.req.header("stripe-signature") ?? "");
+  } catch (error) {
+    console.error("stripe webhook", error);
+    return c.text("Bad signature", 400);
+  }
+  await handleEvent(event);
+  return c.json({ received: true });
+});
 
 const v1 = new Hono<Env>();
 
@@ -66,7 +85,31 @@ v1.get("/me", async (c) => {
   return c.json<MeOutput>({
     user: { id: user.id, email: user.email, name: user.name, image: user.image ?? null },
     allowance: await allowance(user.id),
+    payments: paymentsEnabled(),
   });
+});
+
+// Buying a pass: Stripe's checkout page to go to, then, back from it, the
+// pass granted at once (the webhook grants it too; whichever comes first).
+v1.post("/billing/checkout", limit("checkout", 10, 60), async (c) => {
+  const input = await parse(c, checkoutInput);
+  if (!input.ok) return input.response;
+  if (!paymentsEnabled()) return fail(c, "failed", "Passes aren't on sale yet.");
+  const url = await startCheckout(c.get("user"), input.data.plan, new URL(c.req.url).origin);
+  return c.json<CheckoutOutput>({ url });
+});
+
+v1.post("/billing/confirm", limit("confirm", 30, 60), async (c) => {
+  const input = await parse(c, confirmInput);
+  if (!input.ok) return input.response;
+  const user = c.get("user");
+  try {
+    const status = await fulfill(input.data.session, user.id);
+    return c.json<ConfirmOutput>({ status, allowance: await allowance(user.id) });
+  } catch (error) {
+    if (error instanceof NotYours) return fail(c, "invalid", "Not your checkout.");
+    throw error;
+  }
 });
 
 v1.post("/grammar", limit("grammar", 240, 60), async (c) => {
@@ -76,9 +119,9 @@ v1.post("/grammar", limit("grammar", 240, 60), async (c) => {
 });
 
 // The selection pill prefetches a lookup per settled selection, so the
-// per-minute cap is generous; the daily one bounds what one account can
-// cost in Google Translate.
-v1.post("/lookup", limit("lookup", 120, 60), limit("lookup-day", 3_000, 86_400), async (c) => {
+// per-minute cap is generous; the daily one (well past a heavy writer's
+// 100–200) bounds what one account can cost in Google Translate.
+v1.post("/lookup", limit("lookup", 120, 60), limit("lookup-day", 500, 86_400), async (c) => {
   const input = await parse(c, lookupInput);
   if (!input.ok) return input.response;
   return c.json<LookupOutput>(await lookUp(input.data));
@@ -102,8 +145,12 @@ v1.post("/ask", limit("ask", 20, 60), async (c) => {
   }
 });
 
-/** Ask the AI about one item again, after the writer changed it. An accepted answer passes without a call. */
-v1.post("/check-item", limit("check", 30, 60), async (c) => {
+/**
+ * Ask the AI about one item again, after the writer changed it. An accepted
+ * answer passes without a call. Free on every plan, so it has a daily cap
+ * instead: far past what fixing even 60 reviews' items takes.
+ */
+v1.post("/check-item", limit("check", 30, 60), limit("check-day", 200, 86_400), async (c) => {
   const input = await parse(c, itemCheckInput);
   if (!input.ok) return input.response;
   const { words, accept, ...item } = input.data;
