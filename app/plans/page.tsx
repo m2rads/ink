@@ -6,7 +6,7 @@ import { AppBarSkeleton } from "@/components/app-bar";
 import { PlansScreen } from "./plans-screen";
 
 export const metadata: Metadata = {
-  title: "Plans · Ink",
+  title: "Plans · Encre",
 };
 
 // The return from Stripe's checkout carries ?session=, read at request time.

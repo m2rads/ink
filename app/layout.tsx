@@ -22,7 +22,7 @@ const literata = Literata({
 });
 
 export const metadata: Metadata = {
-  title: "Ink",
+  title: "Encre",
   description: "Practice TEF writing and fix your own mistakes.",
 };
 

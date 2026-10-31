@@ -4,7 +4,7 @@ import { Suspense } from "react";
 import { ConnectMacScreen, ConnectSkeleton } from "./connect-mac-screen";
 
 export const metadata: Metadata = {
-  title: "Connect · Ink",
+  title: "Connect · Encre",
 };
 
 // /connect/mac?state=…&challenge=…: Encre for Mac signing in through the web

@@ -5,8 +5,8 @@
 // never disagree.
 
 export const SITE = {
-  /** The product's name, as the pages and the wordmark say it. */
-  name: "Ink",
+  /** The product's name, as the pages, the wordmark, Stripe and the emails say it ("Ink" is the codebase's own name). */
+  name: "Encre",
   domain: "tryencre.com",
   url: "https://www.tryencre.com",
   /** The seller: the corporation that takes payment. */

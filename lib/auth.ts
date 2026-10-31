@@ -27,7 +27,7 @@ import { sendEmail } from "./email";
 const CODE_MINUTES = 10;
 
 export const auth = betterAuth({
-  appName: "Ink",
+  appName: "Encre",
   trustedOrigins: [process.env.VERCEL_URL, process.env.VERCEL_BRANCH_URL].filter(Boolean).map((host) => `https://${host}`),
   database: drizzleAdapter(db, {
     provider: "pg",
@@ -84,7 +84,7 @@ function signInEmail(email: string, code: string) {
   const origin = process.env.BETTER_AUTH_URL ?? "http://localhost:3000";
   const link = `${origin}/sign-in#${new URLSearchParams({ email, code })}`;
   const text = [
-    `Your Ink sign-in code is ${code}`,
+    `Your Encre sign-in code is ${code}`,
     "",
     `Type it where you asked for it, or open this link to sign in here:`,
     link,
@@ -92,10 +92,10 @@ function signInEmail(email: string, code: string) {
     `The code works for ${CODE_MINUTES} minutes. If you didn't ask for it, you can ignore this email.`,
   ].join("\n");
   const html = `<div style="font-family:system-ui,sans-serif;font-size:16px;line-height:1.5;color:#1a1a1a">
-<p>Your Ink sign-in code is</p>
+<p>Your Encre sign-in code is</p>
 <p style="font-size:32px;font-weight:600;letter-spacing:0.15em;margin:8px 0 24px">${code}</p>
 <p>Type it where you asked for it, or <a href="${link}">sign in with this link</a>.</p>
 <p style="color:#666;font-size:14px">The code works for ${CODE_MINUTES} minutes. If you didn't ask for it, you can ignore this email.</p>
 </div>`;
-  return { to: email, subject: `${code} is your Ink sign-in code`, text, html };
+  return { to: email, subject: `${code} is your Encre sign-in code`, text, html };
 }

@@ -6,7 +6,7 @@ import { googleEnabled } from "@/lib/auth";
 import { SignInScreen } from "./sign-in-screen";
 
 export const metadata: Metadata = {
-  title: "Sign in · Ink",
+  title: "Sign in · Encre",
 };
 
 // /sign-in?next=<path>: an email code, or Google once it's configured

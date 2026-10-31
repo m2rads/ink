@@ -33,7 +33,7 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
           <SidebarMenuItem>
             <SidebarMenuButton render={<Link href="/home" />}>
               <span className="size-4 shrink-0 rounded-full bg-brand" aria-hidden />
-              <span className="font-medium">Ink</span>
+              <span className="font-medium">Encre</span>
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>

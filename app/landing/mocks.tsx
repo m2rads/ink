@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 
 import { Kbd, KbdGroup } from "@/components/ui/kbd";
+import { SITE } from "@/lib/site";
 import { cn } from "@/lib/utils";
 
 // The landing page's pictures of Ink, built from the same tokens and classes
@@ -423,7 +424,7 @@ export function Logo() {
   return (
     <span className="flex items-center gap-2 text-ui font-medium text-text">
       <span className="size-4 rounded-full bg-brand" aria-hidden />
-      Ink
+      {SITE.name}
     </span>
   );
 }

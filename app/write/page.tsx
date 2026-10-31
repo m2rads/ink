@@ -8,7 +8,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { EssayScreen } from "./essay-screen";
 
 export const metadata: Metadata = {
-  title: "Write · Ink",
+  title: "Write · Encre",
 };
 
 // /write?essay=<id> opens one of the user's essays (from /home); &new=1 is a

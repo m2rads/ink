@@ -210,7 +210,7 @@ export function SignInScreen({ google }: { google: boolean }) {
       {step.kind === "link" && (
         <>
           <div className="grid gap-1">
-            <h1 className="text-heading">Sign in to Ink</h1>
+            <h1 className="text-heading">Sign in to Encre</h1>
             <p className="text-ui text-text-2">
               As <span className="text-text">{step.email}</span>
             </p>
