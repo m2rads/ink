@@ -18,7 +18,7 @@ A web writing editor for people preparing for the TEF writing exam (Expression Ã
 
 - **User:** TEF candidates who today write against a phone timer, look words up in 3â€“4 dictionary tabs, then paste the essay into ChatGPT and switch back and forth between their draft and its list of corrections.
 - **Goal is the exam score, not faster practice.** The real exam has no dictionary or AI.
-- **The app is two screens:** Home (`/home`) and the essay (`/write?essay=<id>`): write, time yourself if you want, look words up, review, fix. `/` and `/write` without an essay redirect to Home. Ink needs an account: without one, every page goes to `/sign-in` (which is also sign-up). The sample exam runs (one prompt per section, practice and mock, at bare `/write`) were removed on 2026-10-25; a mock run (timed, no help) would come back as a mode of the essay, not a separate screen.
+- **The app is two screens:** Home (`/home`) and the essay (`/write?essay=<id>`): write, time yourself if you want, look words up, review, fix. `/` signed in and `/write` without an essay redirect to Home; `/` signed out is the landing page (Landing page, below). Ink needs an account: without one, every page goes to `/sign-in` (which is also sign-up). The sample exam runs (one prompt per section, practice and mock, at bare `/write`) were removed on 2026-10-25; a mock run (timed, no help) would come back as a mode of the essay, not a separate screen.
 - **Why not ChatGPT or LanguageTool:** (1) the writer rewrites each mistake in place and Ink re-checks the fix instead of applying its own; (2) mistakes are remembered by category across essays. Both are required from v1. Without them Ink is a tidier LanguageTool.
 
 ### Review: the coach (decided 2026-10-27)
@@ -65,6 +65,17 @@ Explored in a throwaway `/proto/ask` with four directions (Menu, Field, Ghost, M
   - **Field** (a field at the caret; "/" never reaches the essay; answers as you type): the query vanishing from the sentence loses its context, and asking on every pause costs a call per pause.
   - **Ghost** (Enter swaps the query for the best suggestion in the text; Tab cycles): writes into the essay before the writer has chosen.
   - **Margin** (suggestions in the space left of the essay): that's the dictionary's place, and the eye travels away from the sentence.
+
+### Landing page and policies (decided 2026-10-30)
+
+Explored in a throwaway `/proto/landing` with four directions (Product, Try it, Essay, One screen) behind a picker at `/`; Product was chosen and built as `app/landing/` (`landing.tsx`, its `mocks.tsx` pictures, `parts.tsx`, `landing.css`), mounted by `app/page.tsx`. The others were deleted with the picker.
+
+- **Product:** Linear's structure. Hero, the correction view in a window, one statement, three feature rows (fix it yourself, it remembers, look it up), the plans, a closing line. The pictures are the product's own classes and tokens as still images (`role="img"`), never screenshots. No intro animation: the page prerenders as a static shell, and a once-per-session rise can't be known on the server without a flash.
+- **What a payments review needs on the site** (card-network rules and Stripe's account review), all public: what is sold and at what price, in what currency (the Plans section, from `lib/plans.ts` so it never disagrees with checkout; "Prices in Canadian dollars, plus tax where it applies; payments are processed by Stripe"), who sells it and where (the footer: "Ink is made and sold by Rad Atelier Inc., Vancouver, British Columbia, Canada"), a working contact (`SITE.supportEmail`), and the policies: `/terms`, `/privacy`, `/refunds` (`app/terms`, `app/privacy`, `app/refunds`, on the `LegalPage` shell in `app/landing/legal-page.tsx`). The facts live in `lib/site.ts`; the pages read them, so changing the seller, the address or the support email is one edit.
+- **Public routes:** `PUBLIC_PATHS` in `proxy.ts` (`/`, `/terms`, `/privacy`, `/refunds`); a signed-in visitor at `/` goes to Home.
+- **The refund policy's terms:** a full refund within 14 days of purchase with 5 reviews or fewer used; whole refunds only, and a refunded pass ends at once, which is what `lib/billing.ts` does on `charge.refunded`. Change the numbers in `app/refunds/page.tsx` and here together.
+- **The name:** the site says "Ink" (the product's name and wordmark); the seller is Rad Atelier Inc. The Stripe account's trade name should say the same name the site does.
+- Not built: a custom preview domain in `PUBLIC_PATHS`'s Mac counterpart (`Config.isOwnPage` in encre-mac), a cookie banner (one session cookie, no trackers: none is needed).
 
 ### Home (decided 2026-10-24)
 

@@ -13,11 +13,11 @@ import {
 import { Kbd, KbdGroup } from "@/components/ui/kbd";
 import { cn } from "@/lib/utils";
 
-// Throwaway: /proto/landing. Ink's screens, built from the same tokens and
-// classes as the product (correction.tsx, dictionary.tsx, essay-timer.tsx),
-// as still pictures: each mock is one role="img" with a label, unselectable
-// and out of the pointer's way. The essay is real learner French with real
-// learner mistakes.
+// The landing page's pictures of Ink, built from the same tokens and classes
+// as the product (correction.tsx, dictionary.tsx, essay-timer.tsx), as still
+// pictures: each mock is one role="img" with a label, unselectable and out
+// of the pointer's way. The essay is real learner French with real learner
+// mistakes.
 
 export type Category = "prep" | "spell" | "conj" | "accord";
 

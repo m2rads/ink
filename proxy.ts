@@ -3,7 +3,8 @@ import { NextResponse, type NextRequest } from "next/server";
 
 // Ink needs an account (AGENTS.md, Accounts and sync): a visitor without a
 // session cookie goes to sign-in, then back to where they were going. The
-// landing page at / is public.
+// landing page at / and the policies are public; a signed-in visitor at /
+// goes to Home, since Ink is Home and the essay.
 //
 // This only looks for the cookie, so it costs no database query; it's what
 // sends a signed-out visitor to sign-in, not what keeps data safe. Every
@@ -11,9 +12,14 @@ import { NextResponse, type NextRequest } from "next/server";
 // hold no one's data until those calls answer: a stale or forged cookie
 // gets an empty page whose first call fails and sends it to sign-in.
 
+/** Pages anyone can read: the landing page and the policies its footer links. */
+export const PUBLIC_PATHS = new Set(["/", "/terms", "/privacy", "/refunds"]);
+
 export function proxy(request: NextRequest) {
   const { pathname, search } = request.nextUrl;
-  if (pathname === "/" || getSessionCookie(request)) return NextResponse.next();
+  const signedIn = Boolean(getSessionCookie(request));
+  if (pathname === "/" && signedIn) return NextResponse.redirect(new URL("/home", request.url));
+  if (PUBLIC_PATHS.has(pathname) || signedIn) return NextResponse.next();
   const url = new URL("/sign-in", request.url);
   url.searchParams.set("next", pathname + search);
   return NextResponse.redirect(url);
